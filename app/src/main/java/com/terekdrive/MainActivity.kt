@@ -179,11 +179,45 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
    OutlinedButton({running=false;elapsed=0},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text("СБРОС")}
   }
   Spacer(Modifier.height(8.dp));Button({permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text("ВКЛЮЧИТЬ GPS-СКОРОСТЬ")}
-  NavigationHint(language)
+  NavigationPlanner(language,sound)
   Text(if(sound)"🔊 сигналы включены" else "🔇 сигналы выключены",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(top=6.dp));AssistantPanel(sound,assistant,language)
  }
 }
 
+private data class Maneuver(val instruction:String,val distance:Int,val icon:String)
+private data class RouteResult(val distanceKm:Double,val durationMin:Int,val maneuvers:List<Maneuver>)
+@Composable private fun NavigationPlanner(language:Int,sound:Boolean){
+ var destination by rememberSaveable{mutableStateOf("")};var loading by remember{mutableStateOf(false)};var route by remember{mutableStateOf<RouteResult?>(null)};var error by remember{mutableStateOf("")}
+ val scope=rememberCoroutineScope()
+ Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+  Column(Modifier.padding(15.dp)){
+   Text("ПОЛНОЦЕННАЯ НАВИГАЦИЯ",fontWeight=FontWeight.Black,fontSize=15.sp);Text("точка назначения • маршрут • манёвры",color=MUTED,fontSize=10.sp)
+   Spacer(Modifier.height(8.dp))
+   OutlinedTextField(value=destination,onValueChange={destination=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Куда едем?")},placeholder={Text("Например: аэропорт Грозного")})
+   Spacer(Modifier.height(7.dp))
+   Button({if(destination.isNotBlank()){loading=true;error="";scope.launch{val result=withContext(Dispatchers.IO){buildRoute(destination)};route=result;loading=false;if(result==null)error="Маршрут не найден или нет сети."}}},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){Icon(Icons.Default.Route,null);Spacer(Modifier.width(7.dp));Text(if(loading)"СТРОЮ МАРШРУТ…" else "ПОСТРОИТЬ МАРШРУТ")}
+   if(error.isNotBlank())Text(error,color=RED,fontSize=10.sp)
+   route?.let{r->Spacer(Modifier.height(8.dp));Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){SpecCard("ДИСТАНЦИЯ",String.format("%.1f км",r.distanceKm),CYAN,Modifier.weight(1f));SpecCard("ВРЕМЯ",r.durationMin.toString()+" мин",GREEN,Modifier.weight(1f));SpecCard("ШАГИ",r.maneuvers.size.toString(),RED,Modifier.weight(1f))}
+    Spacer(Modifier.height(7.dp));Text("МАНЁВРЫ",fontWeight=FontWeight.Black,fontSize=11.sp)
+    r.maneuvers.take(8).forEach{m->Row(Modifier.fillMaxWidth().padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically){Text(m.icon,fontSize=18.sp);Spacer(Modifier.width(8.dp));Column(Modifier.weight(1f)){Text(m.instruction,fontSize=10.sp,fontWeight=FontWeight.Bold);Text(if(m.distance<1000)m.distance.toString()+" м" else String.format("%.1f км",m.distance/1000.0),color=MUTED,fontSize=9.sp)}}}
+   }
+  }
+ }
+}
+private fun buildRoute(query:String):RouteResult?{
+ return runCatching{
+  val gConn=URL("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+Uri.encode(query)).openConnection() as HttpURLConnection
+  gConn.setRequestProperty("User-Agent","TerekDrive/1.1");gConn.connectTimeout=7000;gConn.readTimeout=7000
+  val g=JSONArray(gConn.inputStream.bufferedReader().use{it.readText()});gConn.disconnect();if(g.length()==0)return null
+  val lat=g.getJSONObject(0).getDouble("lat");val lon=g.getJSONObject(0).getDouble("lon")
+  val c=URL("https://router.project-osrm.org/route/v1/driving/45.6985,43.3178;$lon,$lat?overview=false&steps=true").openConnection() as HttpURLConnection
+  c.setRequestProperty("User-Agent","TerekDrive/1.1");c.connectTimeout=8000;c.readTimeout=8000
+  val root=JSONObject(c.inputStream.bufferedReader().use{it.readText()});c.disconnect();val rr=root.getJSONArray("routes").getJSONObject(0)
+  val steps=rr.getJSONArray("legs").getJSONObject(0).getJSONArray("steps");val list=mutableListOf<Maneuver>()
+  for(i in 0 until steps.length()){val st=steps.getJSONObject(i);val m=st.getJSONObject("maneuver");val type=m.optString("type");val mod=m.optString("modifier");val dist=st.optDouble("distance",0.0).toInt();if(dist>0){val icon=when(mod){"left"->"←";"right"->"→";"slight left"->"↖";"slight right"->"↗";"straight"->"↑";else->"●"};val text=when(type){"depart"->"Начало движения";"arrive"->"Прибытие";"roundabout"->"Круговое движение";"turn"->"Поворот "+when(mod){"left"->"налево";"right"->"направо";else->"прямо"};else->"Продолжайте движение"};list.add(Maneuver(text,dist,icon))}}
+  RouteResult(rr.getDouble("distance")/1000.0,(rr.getDouble("duration")/60.0).toInt(),list)
+ }.getOrNull()
+}
 @Composable private fun SpeedGauge(g:Gauge,speed:Int,m:Modifier){
  val pulse by rememberInfiniteTransition(label="g").animateFloat(.85f,1.08f,infiniteRepeatable(tween(900),RepeatMode.Reverse),label="pulse")
  Canvas(m){
