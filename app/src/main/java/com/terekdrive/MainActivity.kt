@@ -2,6 +2,10 @@ package com.terekdrive
 
 import android.Manifest
 import android.content.Intent
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -64,6 +68,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.random.Random
 
 private const val STYLE_URL="https://tiles.openfreemap.org/styles/liberty"
 private const val RELEASES_URL="https://github.com/kshalovo72-star/TerekDrive/releases"
@@ -71,6 +76,8 @@ private const val REMOTE_CONFIG_URL="https://raw.githubusercontent.com/kshalovo7
 private val BG=Color(0xFF07090C); private val PANEL=Color(0xFF10151B)
 private val RED=Color(0xFFFF3B30); private val CYAN=Color(0xFF00D9FF)
 private val GREEN=Color(0xFF00E5A0); private val MUTED=Color(0xFF8995A3)
+private enum class Season(val title:String,val emoji:String,val accent:Color,val bg:Color){SPRING("ВЕСНА","🌱",Color(0xFF55D66A),Color(0xFF07120C)),SUMMER("ЛЕТО","☀️",Color(0xFFFFB300),Color(0xFF111006)),AUTUMN("ОСЕНЬ","🍂",Color(0xFFFF7043),Color(0xFF160B07)),WINTER("ЗИМА","❄️",Color(0xFF64D8FF),Color(0xFF071016))}
+private fun currentSeason():Season=when(java.time.LocalDate.now().monthValue){3,4,5->Season.SPRING;6,7,8->Season.SUMMER;9,10,11->Season.AUTUMN;else->Season.WINTER}
 private data class Language(val name:String,val tag:String)
 private val languages=listOf(Language("Русский","ru"),Language("English","en"),Language("Deutsch","de"),Language("Français","fr"),Language("Español","es"))
 private data class Assistant(val name:String,val pitch:Float,val rate:Float)
@@ -88,21 +95,22 @@ private val gauges=listOf(
  Gauge("Хром",Color(0xFFB8C2CC),300),Gauge("Неон",Color(0xFFB66CFF),340),Gauge("Матыч",GREEN,320))
 
 class MainActivity:ComponentActivity(){
- override fun onCreate(state:Bundle?){super.onCreate(state);requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_FULL_USER;setContent{TerekDrive()}}
+ override fun onCreate(state:Bundle?){super.onCreate(state);requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_FULL_USER;createUpdateChannel(this);setContent{TerekDrive()}}
 }
 
 @Composable private fun TerekDrive(){
+ val season=currentSeason()
  var tab by remember{mutableIntStateOf(0)}
  var sound by remember{mutableStateOf(true)}
  var animations by rememberSaveable{mutableStateOf(true)}
  val assistant=0
  var language by rememberSaveable{mutableIntStateOf(0)}
  var splash by rememberSaveable{mutableStateOf(true)}
- LaunchedEffect(Unit){kotlinx.coroutines.delay(1800);splash=false}
+ LaunchedEffect(Unit){kotlinx.coroutines.delay(1800);splash=false;checkForUpdates(LocalContext.current)}
  MaterialTheme(colorScheme=darkColorScheme(background=BG,surface=PANEL,primary=RED,onBackground=Color.White,onSurface=Color.White)){
-  Surface(Modifier.fillMaxSize(),color=BG){
+  Surface(Modifier.fillMaxSize(),color=season.bg){
   AnimatedContent(targetState=splash,transitionSpec={fadeIn(animationSpec=tween(450))+scaleIn(initialScale=.88f,animationSpec=tween(650)) togetherWith fadeOut(animationSpec=tween(300))},label="startup",content={showSplash->if(showSplash) SplashScreen() else Column{
-   Header(sound){sound=!sound}
+   Box(Modifier.fillMaxSize()){SeasonEffects(season,animations);Column{Header(sound,season){sound=!sound}
    Box(Modifier.weight(1f)){when(tab){
     0->MapScreen();1->DriveScreen(sound,animations,assistant,language);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
    }}
@@ -115,14 +123,50 @@ class MainActivity:ComponentActivity(){
  }
 }
 
-@Composable private fun Header(sound:Boolean,onSound:()->Unit){
+@Composable private fun Header(sound:Boolean,season:Season,onSound:()->Unit){
  Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
-  Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(RED),contentAlignment=Alignment.Center){Text("TD",fontWeight=FontWeight.Black,fontSize=16.sp)}
+  Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(season.accent),contentAlignment=Alignment.Center){Text("TD",fontWeight=FontWeight.Black,fontSize=16.sp)}
   Spacer(Modifier.width(12.dp));Column{Text("ТЕРЕК ДРАЙВ",fontWeight=FontWeight.Black,fontSize=19.sp,letterSpacing=1.3.sp);Text("MAP • DRIVE • MUSIC",color=MUTED,fontSize=9.sp,letterSpacing=1.sp)}
   Spacer(Modifier.weight(1f));IconButton(onClick=onSound){Icon(if(sound)Icons.Default.VolumeUp else Icons.Default.VolumeOff,null,tint=if(sound)Color.White else MUTED)}
  }
 }
 
+@Composable private fun SeasonEffects(season:Season,animations:Boolean){
+ val progress by rememberInfiniteTransition(label="season").animateFloat(0f,1f,infiniteRepeatable(tween(if(animations)4200 else 12000),RepeatMode.Restart),label="flow")
+ Canvas(Modifier.fillMaxSize()){
+  val count=if(animations)34 else 10
+  repeat(count){i->
+   val x=((i*73)%100)/100f*size.width
+   val base=((i*41)%100)/100f*size.height
+   val y=(base+progress*size.height*(if(season==Season.WINTER).35f else .55f))%size.height
+   when(season){
+    Season.WINTER->{drawCircle(season.accent.copy(alpha=.22f),if(i%3==0)4f else 2f,Offset(x,y))}
+    Season.AUTUMN->{drawOval(season.accent.copy(alpha=.28f),androidx.compose.ui.geometry.Rect(x,y,x+7f,y+4f))}
+    Season.SPRING->{drawCircle(season.accent.copy(alpha=.22f),3f,Offset(x,y))}
+    Season.SUMMER->{drawCircle(season.accent.copy(alpha=.10f),if(i%4==0)7f else 3f,Offset(x,y))}
+   }
+  }
+ }
+}
+private fun createUpdateChannel(context:Context){
+ if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
+  val channel=NotificationChannel("updates","Обновления Терек Драйв",NotificationManager.IMPORTANCE_DEFAULT)
+  context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+ }
+}
+private fun checkForUpdates(context:Context){
+ kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch{
+  runCatching{
+   val c=URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection;c.connectTimeout=5000;c.readTimeout=5000
+   val root=JSONObject(c.inputStream.bufferedReader().use{it.readText()});c.disconnect()
+   val remote=root.optInt("version",0)
+   if(remote>3 && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==android.content.pm.PackageManager.PERMISSION_GRANTED){
+    val n=android.app.Notification.Builder(context,"updates").setSmallIcon(android.R.drawable.stat_sys_download_done).setContentTitle("Терек Драйв обновлён").setContentText(root.optString("message","Доступна новая версия приложения")).setAutoCancel(true).build()
+    context.getSystemService(NotificationManager::class.java).notify(1201,n)
+   }
+  }
+ }
+}
 @Composable private fun MapScreen(){
  var status by remember{mutableStateOf("Онлайн-карта готова")}
  val context=LocalContext.current
