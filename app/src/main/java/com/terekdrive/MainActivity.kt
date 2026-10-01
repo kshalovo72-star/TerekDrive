@@ -95,7 +95,8 @@ class MainActivity:ComponentActivity(){
  var splash by rememberSaveable{mutableStateOf(true)}
  LaunchedEffect(Unit){kotlinx.coroutines.delay(1800);splash=false}
  MaterialTheme(colorScheme=darkColorScheme(background=BG,surface=PANEL,primary=RED,onBackground=Color.White,onSurface=Color.White)){
-  Surface(Modifier.fillMaxSize(),color=BG){Column{
+  Surface(Modifier.fillMaxSize(),color=BG){
+  AnimatedContent(targetState=splash,transitionSpec={fadeIn(tween(450))+scaleIn(initialScale=.88f,tween(650)) togetherWith fadeOut(tween(300))},label="startup"){showSplash->if(showSplash) SplashScreen() else Column{
    Header(sound){sound=!sound}
    Box(Modifier.weight(1f)){when(tab){
     0->MapScreen();1->DriveScreen(sound,animations,assistant);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
@@ -105,6 +106,7 @@ class MainActivity:ComponentActivity(){
     items.forEachIndexed{i,item->NavigationBarItem(tab==i,{tab=i},{Icon(item.first,null)},{Text(item.second,fontSize=9.sp)})}
    }
   }}
+ }
  }
 }
 
