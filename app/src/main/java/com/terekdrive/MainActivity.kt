@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,14 +98,14 @@ class MainActivity:ComponentActivity(){
  LaunchedEffect(Unit){kotlinx.coroutines.delay(1800);splash=false}
  MaterialTheme(colorScheme=darkColorScheme(background=BG,surface=PANEL,primary=RED,onBackground=Color.White,onSurface=Color.White)){
   Surface(Modifier.fillMaxSize(),color=BG){
-  AnimatedContent(targetState=splash,transitionSpec={fadeIn(tween(450))+scaleIn(initialScale=.88f,tween(650)) togetherWith fadeOut(tween(300))},label="startup"){showSplash->if(showSplash) SplashScreen() else Column{
+  AnimatedContent(targetState=splash,transitionSpec={fadeIn(tween(450))+scaleIn(initialScale=.88f,tween(650)) togetherWith fadeOut(tween(300))},label="startup",content={showSplash->if(showSplash) SplashScreen() else Column{
    Header(sound){sound=!sound}
    Box(Modifier.weight(1f)){when(tab){
     0->MapScreen();1->DriveScreen(sound,animations,assistant,language);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
    }}
    NavigationBar(containerColor=Color(0xFF090C10)){
     val items=listOf(Icons.Default.Map to"Карта",Icons.Default.Speed to"Драйв",Icons.Default.DirectionsCar to"Гараж",Icons.Default.MusicNote to"Медиа",Icons.Default.Settings to"Настройки")
-    items.forEachIndexed{i,item->NavigationBarItem(tab==i,{tab=i},{Icon(item.first,null)},{Text(item.second,fontSize=9.sp)})}
+    items.forEachIndexed { i,item -> NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.first,null)},label={Text(item.second,fontSize=9.sp)}) }
    }
   }}
  }
