@@ -18,6 +18,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -65,6 +66,8 @@ private const val REMOTE_CONFIG_URL="https://raw.githubusercontent.com/kshalovo7
 private val BG=Color(0xFF07090C); private val PANEL=Color(0xFF10151B)
 private val RED=Color(0xFFFF3B30); private val CYAN=Color(0xFF00D9FF)
 private val GREEN=Color(0xFF00E5A0); private val MUTED=Color(0xFF8995A3)
+private data class Language(val name:String,val tag:String)
+private val languages=listOf(Language("Русский","ru"),Language("English","en"),Language("Deutsch","de"),Language("Français","fr"),Language("Español","es"))
 private data class Assistant(val name:String,val pitch:Float,val rate:Float)
 private val assistants=listOf(Assistant("Алина",1.08f,.98f),Assistant("Милана",1.18f,1.02f),Assistant("София",.94f,.96f),Assistant("Виктория",1.12f,1.08f),Assistant("Ева",.88f,1.00f))
 
@@ -88,11 +91,14 @@ class MainActivity:ComponentActivity(){
  var sound by remember{mutableStateOf(true)}
  var animations by rememberSaveable{mutableStateOf(true)}
  var assistant by rememberSaveable{mutableIntStateOf(0)}
+ var language by rememberSaveable{mutableIntStateOf(0)}
+ var splash by rememberSaveable{mutableStateOf(true)}
+ LaunchedEffect(Unit){kotlinx.coroutines.delay(1800);splash=false}
  MaterialTheme(colorScheme=darkColorScheme(background=BG,surface=PANEL,primary=RED,onBackground=Color.White,onSurface=Color.White)){
   Surface(Modifier.fillMaxSize(),color=BG){Column{
    Header(sound){sound=!sound}
    Box(Modifier.weight(1f)){when(tab){
-    0->MapScreen();1->DriveScreen(sound,animations,assistant);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,{sound=!sound},{animations=!animations},{assistant=it})
+    0->MapScreen();1->DriveScreen(sound,animations,assistant);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
    }}
    NavigationBar(containerColor=Color(0xFF090C10)){
     val items=listOf(Icons.Default.Map to"Карта",Icons.Default.Speed to"Драйв",Icons.Default.DirectionsCar to"Гараж",Icons.Default.MusicNote to"Медиа",Icons.Default.Settings to"Настройки")
@@ -143,7 +149,7 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
  })
 }
 
-@Composable private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int){
+@Composable private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int){
  var gauge by remember{mutableIntStateOf(0)};var speed by remember{mutableIntStateOf(0)}
  var running by remember{mutableStateOf(false)};var started by remember{mutableLongStateOf(0L)};var elapsed by remember{mutableLongStateOf(0L)}
  val context=LocalContext.current
@@ -157,7 +163,7 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
  LaunchedEffect(running){while(running){elapsed=SystemClock.elapsedRealtime()-started;kotlinx.coroutines.delay(50)}}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
   Text("DRIVE LAB",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 тем • GPS скорость • секундомер",color=MUTED,fontSize=12.sp)
-  Spacer(Modifier.height(8.dp));RoadAnimation(speed,animations,Modifier.fillMaxWidth().height(72.dp));Spacer(Modifier.height(8.dp));SpeedGauge(gauges[gauge],speed.coerceIn(0,gauges[gauge].max),Modifier.fillMaxWidth().height(280.dp))
+  Spacer(Modifier.height(8.dp));RoadAnimation(speed,animations,Modifier.fillMaxWidth().height(72.dp));Spacer(Modifier.height(8.dp));RoadAnimation(speed,animations,Modifier.fillMaxWidth().height(72.dp));Spacer(Modifier.height(8.dp));SpeedGauge(gauges[gauge],speed.coerceIn(0,gauges[gauge].max),Modifier.fillMaxWidth().height(280.dp))
   LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(gauges){i,g->Box(Modifier.width(100.dp).clip(RoundedCornerShape(14.dp)).background(if(i==gauge)g.color.copy(alpha=.18f)else PANEL).clickable{gauge=i}.padding(10.dp)){Text((i+1).toString()+". "+g.name,fontSize=10.sp,fontWeight=FontWeight.Bold)}}}
   Spacer(Modifier.height(12.dp));Row(horizontalArrangement=Arrangement.spacedBy(10.dp),modifier=Modifier.fillMaxWidth()){
    Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){Column(Modifier.padding(16.dp)){Text(speed.toString(),fontSize=34.sp,fontWeight=FontWeight.Black,color=CYAN);Text("км/ч • GPS",color=MUTED,fontSize=11.sp)}}
@@ -168,7 +174,8 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
    OutlinedButton({running=false;elapsed=0},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text("СБРОС")}
   }
   Spacer(Modifier.height(8.dp));Button({permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text("ВКЛЮЧИТЬ GPS-СКОРОСТЬ")}
-  Text(if(sound)"🔊 сигналы включены" else "🔇 сигналы выключены",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(top=6.dp));AssistantPanel(sound,assistant)
+  NavigationHint(language)
+  Text(if(sound)"🔊 сигналы включены" else "🔇 сигналы выключены",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(top=6.dp));AssistantPanel(sound,assistant,language)
  }
 }
 
@@ -221,11 +228,11 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
  }
 }
 
-@Composable private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,toggleSound:()->Unit,toggleAnimations:()->Unit,setAssistant:(Int)->Unit){
+@Composable private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int,toggleSound:()->Unit,toggleAnimations:()->Unit,setAssistant:(Int)->Unit,setLanguage:(Int)->Unit){
  var remote by remember{mutableStateOf("Проверить удалённую конфигурацию")};val context=LocalContext.current
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
   Text("НАСТРОЙКИ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("всё под контролем",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
-  SettingRow("🔊","Звук","Сигналы, подсказки и клики",sound,toggleSound);SettingRow("✨","Анимации","Пульсация, стрелки, переходы",animations,toggleAnimations);Spacer(Modifier.height(8.dp));AssistantSettings(assistant,setAssistant)
+  SettingRow("🔊","Звук","Сигналы, подсказки и клики",sound,toggleSound);SettingRow("✨","Анимации","Пульсация, стрелки, переходы",animations,toggleAnimations);Spacer(Modifier.height(8.dp));AssistantSettings(assistant,setAssistant);Spacer(Modifier.height(8.dp));LanguageSettings(language,setLanguage)
   Spacer(Modifier.height(8.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
    Text("ДИСТАНЦИОННЫЕ ОБНОВЛЕНИЯ",fontWeight=FontWeight.Black);Text(remote,color=MUTED,fontSize=11.sp);Spacer(Modifier.height(8.dp))
    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({remote="Проверяю…";Thread{remote=checkRemote()}.start()}){Icon(Icons.Default.CloudDownload,null);Spacer(Modifier.width(6.dp));Text("ПРОВЕРИТЬ")};OutlinedButton({context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL)))}){Text("РЕЛИЗЫ")}}
@@ -270,7 +277,7 @@ private fun AssistantPanel(sound:Boolean,assistantIndex:Int){
  }
  Column{
   Spacer(Modifier.height(10.dp));Text("ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black,fontSize=15.sp)
-  Text("5 женских профилей • $greeting",color=MUTED,fontSize=10.sp)
+  Text("5 женских профилей • ${languages[language].name} • $greeting",color=MUTED,fontSize=10.sp)
   LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(assistants){i,a->
    Box(Modifier.width(112.dp).clip(RoundedCornerShape(14.dp)).background(if(i==selected)RED.copy(alpha=.18f)else PANEL).clickable{selected=i;tts?.let{applyVoice(it,a)}}.padding(11.dp)){
     Text(a.name,fontWeight=FontWeight.Bold,fontSize=12.sp);Text("голос ${i+1}",color=MUTED,fontSize=9.sp)
@@ -284,7 +291,7 @@ private fun AssistantPanel(sound:Boolean,assistantIndex:Int){
 }
 
 private fun applyVoice(tts:TextToSpeech,profile:Assistant){
- tts.language=Locale("ru","RU")
+ tts.language=Locale(languages[language].tag)
  val voices=tts.voices?.filter{it.locale.language=="ru"}.orEmpty()
  if(voices.isNotEmpty())tts.voice=voices[(profile.name.hashCode().and(Int.MAX_VALUE))%voices.size]
  tts.setPitch(profile.pitch);tts.setSpeechRate(profile.rate)
@@ -304,6 +311,39 @@ private fun AssistantSettings(selected:Int,onSelect:(Int)->Unit){
    }}
   }
  }
+}
+@Composable
+private fun NavigationHint(language:Int){
+ val data=when(languages[language].tag){
+  "en"->Triple("TURN RIGHT","Keep right after the next junction","300 m")
+  "de"->Triple("RECHTS ABBIEGEN","An der nächsten Kreuzung rechts halten","300 m")
+  "fr"->Triple("TOURNEZ À DROITE","Restez à droite au prochain carrefour","300 m")
+  "es"->Triple("GIRE A LA DERECHA","Manténgase a la derecha en el próximo cruce","300 m")
+  else->Triple("ПОВОРОТ НАПРАВО","Держитесь правее после следующего перекрёстка","300 м")
+ }
+ Card(colors=CardDefaults.cardColors(containerColor=Color(0xF21A2028)),modifier=Modifier.fillMaxWidth()){
+  Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
+   Box(Modifier.size(58.dp).clip(RoundedCornerShape(16.dp)).background(CYAN.copy(alpha=.15f)),contentAlignment=Alignment.Center){Icon(Icons.Default.TurnRight,null,tint=CYAN,modifier=Modifier.size(34.dp))}
+   Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(data.first,fontSize=19.sp,fontWeight=FontWeight.Black);Text(data.second,color=MUTED,fontSize=10.sp)}
+   Text(data.third,fontSize=22.sp,fontWeight=FontWeight.Black,color=CYAN)
+  }
+ }
+}
+@Composable
+private fun LanguageSettings(selected:Int,onSelect:(Int)->Unit){
+ Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+  Column(Modifier.padding(16.dp)){Text("ЯЗЫК НАВИГАЦИИ",fontWeight=FontWeight.Black);Text("Подсказки и голосовой штурман",color=MUTED,fontSize=10.sp);Spacer(Modifier.height(8.dp))
+   LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(languages){i,l->Box(Modifier.clip(RoundedCornerShape(13.dp)).background(if(i==selected)RED.copy(alpha=.2f)else Color(0xFF171D24)).clickable{onSelect(i)}.padding(horizontal=14.dp,vertical=11.dp)){Text(l.name,fontSize=11.sp,fontWeight=FontWeight.Bold)}}}
+  }
+ }
+}
+@Composable
+private fun SplashScreen(){
+ val inf=rememberInfiniteTransition(label="splash");val pulse by inf.animateFloat(.86f,1.12f,infiniteRepeatable(tween(900),RepeatMode.Reverse),label="pulse")
+ Box(Modifier.fillMaxSize().background(BG),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){
+  Box(Modifier.size((82*pulse).dp).clip(RoundedCornerShape(27.dp)).background(RED),contentAlignment=Alignment.Center){Text("TD",fontSize=30.sp,fontWeight=FontWeight.Black)}
+  Spacer(Modifier.height(18.dp));Text("ТЕРЕК ДРАЙВ",fontSize=28.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp);Text("DRIVE • NAVIGATION • MUSIC",fontSize=10.sp,color=MUTED,letterSpacing=1.5.sp);Spacer(Modifier.height(18.dp));Text("Готовим маршрут…",fontSize=12.sp,color=Color.White)
+ }}
 }
 @Composable private fun SettingRow(icon:String,title:String,subtitle:String,value:Boolean,onChange:()->Unit){
  Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth().padding(bottom=8.dp)){Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically){
