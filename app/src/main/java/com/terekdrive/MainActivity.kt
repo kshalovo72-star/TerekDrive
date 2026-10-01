@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.Dispatchers
@@ -97,6 +98,7 @@ private const val PREF_LAST_UPDATE = "last_notified_update"
 private const val PREF_SEARCH_HISTORY = "search_history"
 private const val GROZNY_LAT = 43.3178
 private const val GROZNY_LON = 45.6985
+private const val APP_VERSION_CODE = 8
 
 private val BG = Color(0xFF07090C)
 private val PANEL = Color(0xFF10151B)
@@ -504,7 +506,7 @@ private fun SeasonEffects(season:Season,animations:Boolean){
             val y=(base+progress*size.height*.55f)%size.height
             when(season){
                 Season.WINTER->drawCircle(season.accent.copy(alpha=.22f),if(i%3==0)4f else 2f,Offset(x,y))
-                Season.AUTUMN->rotate(((i*37)%50-25).toFloat(),Offset(x,y)){drawOval(season.accent.copy(alpha=.30f),Rect(x,y,x+9f,y+5f))}
+                Season.AUTUMN->rotate(((i*37)%50-25).toFloat(),Offset(x,y)){drawOval(color=season.accent.copy(alpha=.30f),topLeft=Offset(x,y),size=androidx.compose.ui.geometry.Size(9f,5f))}
                 Season.SPRING->drawCircle(season.accent.copy(alpha=.22f),3f,Offset(x,y))
                 Season.SUMMER->drawCircle(season.accent.copy(alpha=.10f),if(i%4==0)7f else 3f,Offset(x,y))
             }
@@ -527,7 +529,7 @@ private fun checkForUpdates(context:Context){
             val root=JSONObject(c.inputStream.bufferedReader().use{it.readText()});c.disconnect()
             val remote=root.optInt("version",0)
             val last=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getInt(PREF_LAST_UPDATE,0)
-            if(remote>BuildConfig.VERSION_CODE && remote>last){
+            if(remote>APP_VERSION_CODE && remote>last){
                 if(Build.VERSION.SDK_INT<33 || ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED){
                     val intent=Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL))
                     val pending=PendingIntent.getActivity(context,1201,intent,PendingIntent.FLAG_UPDATE_CURRENT or if(Build.VERSION.SDK_INT>=23)PendingIntent.FLAG_IMMUTABLE else 0)
@@ -1045,7 +1047,7 @@ private fun CarVisual(car:Car,modifier:Modifier,accent:Color){
         val cx=size.width/2f;val y=size.height*.57f
         val w=size.width*when(car.type){"SUPER"->.76f;"SUV"->.72f;"MUSCLE"->.80f;else->.78f}
         val h=size.height*when(car.type){"SUV"->.30f;else->.24f}
-        drawOval(Color.Black.copy(alpha=.65f),Rect(cx-w*.52f,y+h*.30f,cx+w*.52f,y+h*.58f))
+        drawOval(color=Color.Black.copy(alpha=.65f),topLeft=Offset(cx-w*.52f,y+h*.30f),size=androidx.compose.ui.geometry.Size(w*1.04f,h*.28f))
         drawRoundRect(Color(0xFF161D25),Offset(cx-w/2,y-h/2),androidx.compose.ui.geometry.Size(w,h),cornerRadius=androidx.compose.ui.geometry.CornerRadius(20f,20f))
         val cabinW=w*.48f
         val cabinPath=Path().apply{
