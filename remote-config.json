@@ -1,6 +1,6 @@
 {
-  "version": 6,
-  "message": "Терек Драйв 1.5: Гена, погода, музыка и история поиска.",
+  "version": 7,
+  "message": "Терек Драйв 1.6: удобная навигация, быстрый доступ и маршруты от GPS.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
@@ -13,5 +13,8 @@
   "gena_voice_input": true,
   "weather_live": true,
   "music_visualizer": true,
-  "search_history": true
+  "search_history": true,
+  "navigation_v2": true,
+  "gps_route_origin": true,
+  "quick_navigation": true
 }
