@@ -17,6 +17,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -163,6 +165,7 @@ private fun TerekDrive(){
     var assistant by rememberSaveable{mutableIntStateOf(0)}
     var language by rememberSaveable{mutableIntStateOf(0)}
     var splash by rememberSaveable{mutableStateOf(true)}
+    var genaOpen by rememberSaveable{mutableStateOf(false)}
     val context=LocalContext.current
     val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
     LaunchedEffect(Unit){
@@ -203,10 +206,187 @@ private fun TerekDrive(){
                             }
                         }
                     }
+                    GenaQuickCall(open=genaOpen,onOpen={genaOpen=true},onClose={genaOpen=false},sound=sound,language=language,season=season)
                 }
             }
         }
     }
+}
+
+
+private val genaReplies = listOf(
+    "как дела" to listOf("В порядке, шеф. Мотор не жалуется, значит и я не жалуюсь.","Отлично. Я на связи, дорога под контролем, настроение — турбо."),
+    "скучно" to listOf("Скучно? Тогда включай музыку. Но только не устраивай гонки с голубями.","Я могу шутить бесконечно. Но обещай, что руль всё-таки держишь двумя руками."),
+    "кто ты" to listOf("Я Гена — твой голосовой штурман. Не идеальный, зато всегда рядом и без кофе не капризничаю.","Гена. Навигатор, собеседник и человек, который никогда не скажет: я же говорил."),
+    "помоги" to listOf("Конечно. Скажи, куда едем, что включить или просто спроси меня о чём-нибудь.","Я рядом. Могу подсказать по дороге, пошутить или напомнить не торопиться."),
+    "спасибо" to listOf("Всегда пожалуйста. За рулём главное — спокойствие, а не геройство.","Пожалуйста, шеф. Премию можно выдать бензином."),
+    "привет" to listOf("Привет, шеф! Гена на связи. Куда держим курс?","О, водитель объявился. Я уже думал, ты опять молча смотришь на светофор."),
+    "устал" to listOf("Если реально устал — лучше остановись и отдохни. Я никуда не тороплюсь.","Отдых важнее маршрута. Остановись в безопасном месте, а я подожду."),
+    "анекдот" to listOf("Почему навигатор не спорит с водителем? Потому что знает: водитель всё равно сделает по-своему.","Едет машина в сервис. Механик спрашивает: что случилось? Машина отвечает: меня опять водили за нос."),
+    "шутка" to listOf("Шутка дня: самый короткий маршрут — тот, который водитель не пропустил.","Я хотел пошутить про тормоза, но передумал. С ними лучше не шутить."),
+    "погода" to listOf("Погоду я могу подсказать через погодный модуль, а окно откроешь сам — я пока руки не научился высовывать.","Если на улице мокро, помни: физика тоже едет с тобой."),
+    "музыка" to listOf("Музыка — твоя. Выбирай трек, а я сделаю вид, что не слышу твой вокал.","Давай музыку погромче. Но так, чтобы сирены всё равно было слышно.")
+)
+private val genaFallbacks = listOf(
+    "Интересный вопрос. Скажи чуть проще — я постараюсь не потеряться на втором повороте.",
+    "Я услышал тебя. Можешь спросить про дорогу, машину, музыку или просто попросить шутку.",
+    "Хороший вопрос. У меня пока нет ответа, зато есть чувство юмора — уже неплохо.",
+    "Не понял до конца. Повтори ещё раз, шеф. Только без крика — я не ГИБДД.",
+    "Я рядом. Давай ещё раз — Гена любит сложные задачи."
+)
+
+private fun genaAnswer(text:String):String {
+    val q=text.trim().lowercase(Locale.getDefault())
+    if(q.isBlank()) return "Я слушаю, шеф."
+    genaReplies.firstOrNull{q.contains(it.first)}?.let{return it.second.random()}
+    if(q.contains("скорост")||q.contains("быстро")||q.contains("едем")) return "Скорость смотрю по GPS. Главное — выбирай её по дороге и условиям, а не по настроению."
+    if(q.contains("маршрут")||q.contains("куда")) return "Назови пункт назначения — построим маршрут. А я буду напоминать о поворотах."
+    if(q.contains("машин")||q.contains("авто")||q.contains("машина")) return "В гараже есть десять машин. Выбирай характер: спорт, суперкар, SUV или мускул-кар."
+    if(q.contains("время")||q.contains("который час")) return "Сейчас "+java.text.SimpleDateFormat("HH:mm",Locale.getDefault()).format(java.util.Date())+". Время ехать спокойно, а не торопиться."
+    if(q.contains("молодец")||q.contains("круто")) return listOf("Спасибо! Я стараюсь. У меня даже стрелка настроения есть — почти в красной зоне.","Вот это разговор. Едем дальше, шеф.").random()
+    return genaFallbacks.random()
+}
+
+@Composable
+private fun GenaQuickCall(
+    open:Boolean,onOpen:()->Unit,onClose:()->Unit,sound:Boolean,language:Int,season:Season
+){
+    val context=LocalContext.current
+    var input by rememberSaveable{mutableStateOf("")}
+    var answer by rememberSaveable{mutableStateOf("Гена на связи. Нажми микрофон или напиши мне что-нибудь.") }
+    var listening by remember{mutableStateOf(false)}
+    val speechPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->
+        if(granted) startGenaListening(context){spoken->input=spoken;answer=genaAnswer(spoken)}
+    }
+    val recognizer=remember{
+        if(SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null
+    }
+    DisposableEffect(recognizer){
+        recognizer?.setRecognitionListener(object:android.speech.RecognitionListener{
+            override fun onReadyForSpeech(p:Bundle?){listening=true}
+            override fun onBeginningOfSpeech(){}
+            override fun onRmsChanged(r:Float){}
+            override fun onBufferReceived(b:ByteArray?){}
+            override fun onEndOfSpeech(){listening=false}
+            override fun onError(e:Int){listening=false}
+            override fun onResults(b:Bundle?){
+                listening=false
+                val text=b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                if(text.isNotBlank()){input=text;answer=genaAnswer(text)}
+            }
+            override fun onPartialResults(b:Bundle?){}
+            override fun onEvent(t:Int,b:Bundle?){}
+        })
+        onDispose{recognizer?.destroy()}
+    }
+    val speak: (String)->Unit = {text->
+        if(sound){
+            val tts=TextToSpeech(context){status->
+                if(status==TextToSpeech.SUCCESS){
+                    applyVoice(tts,gena,language)
+                    tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"gena_reply")
+                }
+            }
+        }
+    }
+    Box(Modifier.fillMaxSize()){
+        if(!open){
+            FloatingActionButton(
+                onClick=onOpen,
+                modifier=Modifier.align(Alignment.BottomEnd).padding(end=16.dp,bottom=82.dp),
+                containerColor=RED,contentColor=Color.White
+            ){Icon(Icons.Default.RecordVoiceOver,"Гена")}
+        } else {
+            Dialog(onDismissRequest=onClose){
+                Card(
+                    Modifier.fillMaxWidth().padding(10.dp),
+                    colors=CardDefaults.cardColors(containerColor=Color(0xFF0D1218)),
+                    shape=RoundedCornerShape(26.dp)
+                ){
+                    Column(Modifier.padding(18.dp)){
+                        Row(verticalAlignment=Alignment.CenterVertically){
+                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(season.accent),contentAlignment=Alignment.Center){
+                                Text("Г",color=BG,fontSize=28.sp,fontWeight=FontWeight.Black)
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)){
+                                Text("ГЕНА",fontSize=21.sp,fontWeight=FontWeight.Black)
+                                Text("быстрый вызов • разговор • шутки",color=MUTED,fontSize=10.sp)
+                            }
+                            IconButton(onClick=onClose){Icon(Icons.Default.Close,null)}
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+                            Column(Modifier.padding(14.dp)){
+                                Text(answer,fontSize=14.sp,fontWeight=FontWeight.Medium)
+                                Spacer(Modifier.height(5.dp))
+                                Text(if(listening)"СЛУШАЮ…" else "Гена понимает короткие фразы и отвечает голосом",color=season.accent,fontSize=9.sp)
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value=input,onValueChange={input=it},modifier=Modifier.fillMaxWidth(),singleLine=true,
+                            label={Text("Скажи или напиши Гене")},
+                            trailingIcon={
+                                IconButton(onClick={
+                                    if(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){
+                                        startGenaListening(context){spoken->input=spoken;answer=genaAnswer(spoken)}
+                                    } else speechPermission.launch(Manifest.permission.RECORD_AUDIO)
+                                }){
+                                    Icon(if(listening)Icons.Default.MicOff else Icons.Default.Mic,null,tint=if(listening)RED else season.accent)
+                                }
+                            }
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement=Arrangement.spacedBy(7.dp),modifier=Modifier.fillMaxWidth()){
+                            Button({
+                                val q=genaAnswer(input);answer=q;speak(q)
+                            },Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("СПРОСИТЬ")}
+                            OutlinedButton({
+                                val q=listOf(
+                                    "Знаешь, почему хорошие водители не спорят с навигатором? Потому что навигатор запоминает.",
+                                    "Если настроение на нуле — прибавь музыки, но не скорость.",
+                                    "Я не опаздываю. Я просто выбираю очень длинный маршрут.",
+                                    "Главное на дороге — не победить всех, а спокойно доехать."
+                                ).random()
+                                answer=q;speak(q)
+                            },Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ШУТКА")}
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()){
+                            listOf("Как дела?","Анекдот","Куда едем?").forEach{phrase->
+                                AssistChip(onClick={input=phrase;answer=genaAnswer(phrase);speak(answer)},label={Text(phrase,fontSize=9.sp)})
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun startGenaListening(context:Context,onText:(String)->Unit){
+    if(!SpeechRecognizer.isRecognitionAvailable(context)) return
+    val recognizer=SpeechRecognizer.createSpeechRecognizer(context)
+    recognizer.setRecognitionListener(object:android.speech.RecognitionListener{
+        override fun onReadyForSpeech(p:Bundle?){}
+        override fun onBeginningOfSpeech(){}
+        override fun onRmsChanged(r:Float){}
+        override fun onBufferReceived(b:ByteArray?){}
+        override fun onEndOfSpeech(){}
+        override fun onError(e:Int){recognizer.destroy()}
+        override fun onResults(b:Bundle?){
+            b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let(onText)
+            recognizer.destroy()
+        }
+        override fun onPartialResults(b:Bundle?){}
+        override fun onEvent(t:Int,b:Bundle?){}
+    })
+    recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply{
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE,Locale.getDefault())
+        putExtra(RecognizerIntent.EXTRA_PROMPT,"Гена слушает")
+    })
 }
 
 @Composable
