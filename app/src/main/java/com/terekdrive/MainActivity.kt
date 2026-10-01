@@ -252,7 +252,7 @@ private fun RoadAnimation(speed:Int,enabled:Boolean,modifier:Modifier){
 
 @Composable
 private fun AssistantPanel(sound:Boolean,assistantIndex:Int){
- var selected by rememberSaveable{mutableIntStateOf(assistantIndex)}
+ var selected by remember(assistantIndex){mutableIntStateOf(assistantIndex)}
  val context=LocalContext.current
  var tts by remember{mutableStateOf<TextToSpeech?>(null)}
  DisposableEffect(Unit){
@@ -262,6 +262,12 @@ private fun AssistantPanel(sound:Boolean,assistantIndex:Int){
   onDispose{engine?.stop();engine?.shutdown()}
  }
  val greeting=timeGreeting()
+ LaunchedEffect(tts,sound){
+  if(sound && tts!=null){
+   val hello=greeting+", водитель. Я "+assistants[selected].name+". Хорошей дороги!"
+   tts?.let{applyVoice(it,assistants[selected]);it.speak(hello,TextToSpeech.QUEUE_FLUSH,null,"auto_greeting")}
+  }
+ }
  Column{
   Spacer(Modifier.height(10.dp));Text("ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black,fontSize=15.sp)
   Text("5 женских профилей • $greeting",color=MUTED,fontSize=10.sp)
