@@ -106,20 +106,30 @@ class MainActivity:ComponentActivity(){
  val assistant=0
  var language by rememberSaveable{mutableIntStateOf(0)}
  var splash by rememberSaveable{mutableStateOf(true)}
- LaunchedEffect(Unit){kotlinx.coroutines.delay(1800);splash=false;checkForUpdates(LocalContext.current)}
- MaterialTheme(colorScheme=darkColorScheme(background=BG,surface=PANEL,primary=RED,onBackground=Color.White,onSurface=Color.White)){
-  Surface(Modifier.fillMaxSize(),color=season.bg){
-  AnimatedContent(targetState=splash,transitionSpec={fadeIn(animationSpec=tween(450))+scaleIn(initialScale=.88f,animationSpec=tween(650)) togetherWith fadeOut(animationSpec=tween(300))},label="startup",content={showSplash->if(showSplash) SplashScreen() else Column{
-   Box(Modifier.fillMaxSize()){SeasonEffects(season,animations);Column{Header(sound,season){sound=!sound}
-   Box(Modifier.weight(1f)){when(tab){
-    0->MapScreen();1->DriveScreen(sound,animations,assistant,language);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
-   }}
-   NavigationBar(containerColor=Color(0xFF090C10)){
-    val items=listOf(Icons.Default.Map to "Карта",Icons.Default.Speed to "Драйв",Icons.Default.DirectionsCar to "Гараж",Icons.Default.MusicNote to "Медиа",Icons.Default.Settings to "Настройки")
-    items.forEachIndexed { i,item -> NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.first,null)},label={Text(item.second,fontSize=9.sp)}) }
-   }
-   }})
+ val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
+ val context=LocalContext.current
+ LaunchedEffect(Unit){
+  if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED)notificationPermission.launch("android.permission.POST_NOTIFICATIONS")
+  kotlinx.coroutines.delay(1800);splash=false;checkForUpdates(context)
  }
+ MaterialTheme(colorScheme=darkColorScheme(background=season.bg,surface=PANEL,primary=season.accent,onBackground=Color.White,onSurface=Color.White)){
+  Surface(Modifier.fillMaxSize(),color=season.bg){
+   AnimatedContent(targetState=splash,transitionSpec={fadeIn(animationSpec=tween(450))+scaleIn(initialScale=.88f,animationSpec=tween(650)) togetherWith fadeOut(animationSpec=tween(300))},label="startup"){showSplash->
+    if(showSplash) SplashScreen() else Box(Modifier.fillMaxSize()){
+     SeasonEffects(season,animations)
+     Column(Modifier.fillMaxSize()){
+      Header(sound,season){sound=!sound}
+      Box(Modifier.weight(1f)){when(tab){
+       0->MapScreen();1->DriveScreen(sound,animations,assistant,language);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
+      }}
+      NavigationBar(containerColor=Color(0xFF090C10)){
+       val items=listOf(Icons.Default.Map to "Карта",Icons.Default.Speed to "Драйв",Icons.Default.DirectionsCar to "Гараж",Icons.Default.MusicNote to "Медиа",Icons.Default.Settings to "Настройки")
+       items.forEachIndexed{i,item->NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.first,null)},label={Text(item.second,fontSize=9.sp)})}
+      }
+     }
+    }
+   }
+  }
  }
 }
 
