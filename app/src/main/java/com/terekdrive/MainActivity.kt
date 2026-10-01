@@ -237,7 +237,7 @@ private fun TerekDrive(){
                         Box(Modifier.weight(1f)){
                             when(tab){
                                 0->MapScreen(season)
-                                1->DriveScreen(sound,animations,assistant,language)
+                                1->DriveScreen(sound,animations,assistant,language,{tab=0})
                                 2->GarageScreen(season)
                                 3->MediaScreen(sound,season)
                                 else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it},season)
@@ -593,7 +593,7 @@ private fun downloadOffline(context:Context,done:(String)->Unit){
 }
 
 @Composable
-private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int){
+private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int,onOpenMap:()->Unit){
     var gauge by rememberSaveable{mutableIntStateOf(0)}
     var gpsSpeed by remember{mutableFloatStateOf(0f)}
     var lastFixMs by remember{mutableLongStateOf(0L)}
@@ -687,7 +687,7 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
             Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text(if(gpsEnabled)"ОБНОВИТЬ GPS-ДОСТУП" else "ВКЛЮЧИТЬ GPS-СКОРОСТЬ")
         }
         Spacer(Modifier.height(8.dp))
-        NavigationPlanner(language,sound,currentLat,currentLon,onOpenMap={})
+        NavigationPlanner(language,sound,currentLat,currentLon,onOpenMap)
         Spacer(Modifier.height(8.dp))
         AssistantPanel(sound,assistant,language)
     }
