@@ -72,7 +72,7 @@ private val GREEN=Color(0xFF00E5A0); private val MUTED=Color(0xFF8995A3)
 private data class Language(val name:String,val tag:String)
 private val languages=listOf(Language("Русский","ru"),Language("English","en"),Language("Deutsch","de"),Language("Français","fr"),Language("Español","es"))
 private data class Assistant(val name:String,val pitch:Float,val rate:Float)
-private val assistants=listOf(Assistant("Алина",1.08f,.98f),Assistant("Милана",1.18f,1.02f),Assistant("София",.94f,.96f),Assistant("Виктория",1.12f,1.08f),Assistant("Ева",.88f,1.00f))
+private val gena=Assistant("Гена",0.96f,1.02f)
 
 private data class Car(val name:String,val type:String,val hp:Int,val top:Int)
 private data class Gauge(val name:String,val color:Color,val max:Int)
@@ -93,7 +93,7 @@ class MainActivity:ComponentActivity(){
  var tab by remember{mutableIntStateOf(0)}
  var sound by remember{mutableStateOf(true)}
  var animations by rememberSaveable{mutableStateOf(true)}
- var assistant by rememberSaveable{mutableIntStateOf(0)}
+ val assistant=0
  var language by rememberSaveable{mutableIntStateOf(0)}
  var splash by rememberSaveable{mutableStateOf(true)}
  LaunchedEffect(Unit){kotlinx.coroutines.delay(1800);splash=false}
@@ -264,85 +264,45 @@ private fun RoadAnimation(speed:Int,enabled:Boolean,modifier:Modifier){
 
 @Composable
 private fun AssistantPanel(sound:Boolean,assistantIndex:Int,language:Int){
- var selected by remember(assistantIndex){mutableIntStateOf(assistantIndex)}
  val context=LocalContext.current
  var tts by remember{mutableStateOf<TextToSpeech?>(null)}
  DisposableEffect(Unit){
   var engine:TextToSpeech?=null
-  engine=TextToSpeech(context){status->if(status==TextToSpeech.SUCCESS)engine?.let{applyVoice(it,assistants[selected],language)}}
+  engine=TextToSpeech(context){status->if(status==TextToSpeech.SUCCESS)engine?.let{applyVoice(it,gena,language)}}
   tts=engine
   onDispose{engine?.stop();engine?.shutdown()}
  }
- val greeting=timeGreeting()
- LaunchedEffect(tts,sound){
-  if(sound && tts!=null){
-   val hello=greeting+", водитель. Я "+assistants[selected].name+". Хорошей дороги!"
-   tts?.let{applyVoice(it,assistants[selected],language);it.speak(hello,TextToSpeech.QUEUE_FLUSH,null,"auto_greeting")}
-  }
- }
  Column{
-  Spacer(Modifier.height(10.dp));Text("ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black,fontSize=15.sp)
-  Text("5 женских профилей • ${languages[language].name} • $greeting",color=MUTED,fontSize=10.sp)
-  LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(assistants){i,a->
-   Box(Modifier.width(112.dp).clip(RoundedCornerShape(14.dp)).background(if(i==selected)RED.copy(alpha=.18f)else PANEL).clickable{selected=i;tts?.let{applyVoice(it,a,language)}}.padding(11.dp)){
-    Text(a.name,fontWeight=FontWeight.Bold,fontSize=12.sp);Text("голос ${i+1}",color=MUTED,fontSize=9.sp)
-   }
-  }}
+  Spacer(Modifier.height(10.dp));Text("ГЕНА • ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black,fontSize=15.sp)
+  Text("Один голос • "+languages[language].name+" • навигационные подсказки",color=MUTED,fontSize=10.sp)
+  Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth().padding(top=8.dp)){
+   Box(Modifier.size(54.dp).clip(RoundedCornerShape(16.dp)).background(RED),contentAlignment=Alignment.Center){Text("Г",fontSize=28.sp,fontWeight=FontWeight.Black)}
+   Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text("Гена",fontSize=18.sp,fontWeight=FontWeight.Black);Text("спокойный мужской голос • TTS",color=MUTED,fontSize=10.sp)}
+   Icon(Icons.Default.RecordVoiceOver,null,tint=GREEN)
+  }
   Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth().padding(top=8.dp)){
-   Button({if(sound)tts?.let{applyVoice(it,assistants[selected],language);it.speak("$greeting, водитель. Хорошей дороги!",TextToSpeech.QUEUE_FLUSH,null,"greeting")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Icon(Icons.Default.RecordVoiceOver,null);Spacer(Modifier.width(6.dp));Text("ПРИВЕТСТВИЕ")}
-   OutlinedButton({if(sound)tts?.speak("Впереди спокойный участок. Соблюдайте скорость и следите за дорогой.",TextToSpeech.QUEUE_FLUSH,null,"hint")},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПОДСКАЗКА")}
+   Button({if(sound)tts?.let{applyVoice(it,gena,language);it.speak("Гена на связи. Хорошей дороги!",TextToSpeech.QUEUE_FLUSH,null,"greeting")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПРОВЕРИТЬ ГЕНУ")}
+   OutlinedButton({if(sound)tts?.let{applyVoice(it,gena,language);it.speak("Следите за скоростью, держите дистанцию и не отвлекайтесь от дороги.",TextToSpeech.QUEUE_FLUSH,null,"hint")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПОДСКАЗКА")}
   }
  }
 }
-
 private fun applyVoice(tts:TextToSpeech,profile:Assistant,languageIndex:Int){
  val requested=Locale(languages[languageIndex].tag)
  val result=tts.setLanguage(requested)
- val actualLanguage=if(result==TextToSpeech.LANG_MISSING_DATA||result==TextToSpeech.LANG_NOT_SUPPORTED) Locale.getDefault() else requested
- val voices=tts.voices?.filter{it.locale.language==actualLanguage.language}.orEmpty()
- if(voices.isNotEmpty())tts.voice=voices[(profile.name.hashCode().and(Int.MAX_VALUE))%voices.size]
+ val actual=if(result==TextToSpeech.LANG_MISSING_DATA||result==TextToSpeech.LANG_NOT_SUPPORTED)Locale.getDefault() else requested
+ val voices=tts.voices?.filter{it.locale.language==actual.language}.orEmpty()
+ if(voices.isNotEmpty())tts.voice=voices.first()
  tts.setPitch(profile.pitch);tts.setSpeechRate(profile.rate)
-}
-private fun timeGreeting():String{
- val h=java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
- return when(h){in 5..11->"Доброе утро";in 12..17->"Добрый день";in 18..22->"Добрый вечер";else->"Доброй ночи"}
 }
 @Composable
 private fun AssistantSettings(selected:Int,onSelect:(Int)->Unit){
- Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
-  Column(Modifier.padding(16.dp)){
-   Text("ГОЛОСОВЫЕ ПОМОЩНИКИ",fontWeight=FontWeight.Black)
-   Text("5 профилей. Реальные доступные голоса зависят от TTS-движка телефона.",color=MUTED,fontSize=10.sp)
-   assistants.forEachIndexed{i,a->Row(Modifier.fillMaxWidth().clickable{onSelect(i)}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
-    RadioButton(selected==i,{onSelect(i)});Text(a.name,fontWeight=FontWeight.Bold);Spacer(Modifier.width(8.dp));Text("тембр ${a.pitch} • скорость ${a.rate}",color=MUTED,fontSize=9.sp)
-   }}
+ Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
+  Text("ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black)
+  Text("Гена — единственный голос приложения.",color=MUTED,fontSize=10.sp)
+  Row(Modifier.fillMaxWidth().padding(top=8.dp),verticalAlignment=Alignment.CenterVertically){
+   RadioButton(true,{onSelect(0)});Text("Гена",fontWeight=FontWeight.Bold);Spacer(Modifier.width(8.dp));Text("мужской • спокойный",color=MUTED,fontSize=10.sp)
   }
- }
-}
-@Composable
-private fun NavigationHint(language:Int){
- val data=when(languages[language].tag){
-  "en"->Triple("TURN RIGHT","Keep right after the next junction","300 m")
-  "de"->Triple("RECHTS ABBIEGEN","An der nächsten Kreuzung rechts halten","300 m")
-  "fr"->Triple("TOURNEZ À DROITE","Restez à droite au prochain carrefour","300 m")
-  "es"->Triple("GIRE A LA DERECHA","Manténgase a la derecha en el próximo cruce","300 m")
-  else->Triple("ПОВОРОТ НАПРАВО","Держитесь правее после следующего перекрёстка","300 м")
- }
- Card(colors=CardDefaults.cardColors(containerColor=Color(0xF21A2028)),modifier=Modifier.fillMaxWidth()){
-  Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
-   Box(Modifier.size(58.dp).clip(RoundedCornerShape(16.dp)).background(CYAN.copy(alpha=.15f)),contentAlignment=Alignment.Center){Icon(Icons.Default.TurnRight,null,tint=CYAN,modifier=Modifier.size(34.dp))}
-   Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(data.first,fontSize=19.sp,fontWeight=FontWeight.Black);Text(data.second,color=MUTED,fontSize=10.sp)}
-   Text(data.third,fontSize=22.sp,fontWeight=FontWeight.Black,color=CYAN)
-  }
- }
-}
-@Composable
-private fun LanguageSettings(selected:Int,onSelect:(Int)->Unit){
- Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
-  Column(Modifier.padding(16.dp)){Text("ЯЗЫК НАВИГАЦИИ",fontWeight=FontWeight.Black);Text("Подсказки и голосовой штурман",color=MUTED,fontSize=10.sp);Spacer(Modifier.height(8.dp))
-   LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(languages){i,l->Box(Modifier.clip(RoundedCornerShape(13.dp)).background(if(i==selected)RED.copy(alpha=.2f)else Color(0xFF171D24)).clickable{onSelect(i)}.padding(horizontal=14.dp,vertical=11.dp)){Text(l.name,fontSize=11.sp,fontWeight=FontWeight.Bold)}}}
-  }
- }
+ }}
 }
 @Composable
 private fun SplashScreen(){
