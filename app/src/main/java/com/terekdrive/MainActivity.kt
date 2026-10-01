@@ -763,7 +763,7 @@ private fun RoadAnimation(speed:Float,animations:Boolean,modifier:Modifier){
 }
 
 private data class Maneuver(val instruction:String,val distance:Int,val icon:String)
-private data class RouteResult(val distanceKm:Double,val durationMin:Int,val maneuvers:List<Maneuver),val destinationLat:Double,val destinationLon:Double)
+private data class RouteResult(val distanceKm:Double,val durationMin:Int,val maneuvers:List<Maneuver>,val destinationLat:Double,val destinationLon:Double)
 
 
 private fun loadSearchHistory(context:Context):List<String>{
@@ -862,7 +862,7 @@ private fun NavigationPlanner(language:Int,sound:Boolean,currentLat:Double?,curr
         }
     }
 }
-private fun formatRouteTime(minutes:Int):String=if(minutes>=60)minutes/60.toString()+" ч "+(minutes%60)+" мин" else "$minutes мин"
+private fun formatRouteTime(minutes:Int):String=if(minutes>=60)(minutes/60).toString()+" ч "+(minutes%60)+" мин" else minutes.toString()+" мин"
 
 
 private fun buildRoute(query:String,originLat:Double,originLon:Double):RouteResult? = runCatching{
