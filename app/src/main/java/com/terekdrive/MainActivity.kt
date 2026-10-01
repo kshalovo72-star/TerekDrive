@@ -10,6 +10,9 @@ import android.media.ToneGenerator
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.content.pm.ActivityInfo
+import java.util.Locale
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -62,6 +65,8 @@ private const val REMOTE_CONFIG_URL="https://raw.githubusercontent.com/kshalovo7
 private val BG=Color(0xFF07090C); private val PANEL=Color(0xFF10151B)
 private val RED=Color(0xFFFF3B30); private val CYAN=Color(0xFF00D9FF)
 private val GREEN=Color(0xFF00E5A0); private val MUTED=Color(0xFF8995A3)
+private data class Assistant(val name:String,val pitch:Float,val rate:Float)
+private val assistants=listOf(Assistant("Алина",1.08f,.98f),Assistant("Милана",1.18f,1.02f),Assistant("София",.94f,.96f),Assistant("Виктория",1.12f,1.08f),Assistant("Ева",.88f,1.00f))
 
 private data class Car(val name:String,val type:String,val hp:Int,val top:Int)
 private data class Gauge(val name:String,val color:Color,val max:Int)
@@ -75,18 +80,19 @@ private val gauges=listOf(
  Gauge("Хром",Color(0xFFB8C2CC),300),Gauge("Неон",Color(0xFFB66CFF),340),Gauge("Матыч",GREEN,320))
 
 class MainActivity:ComponentActivity(){
- override fun onCreate(state:Bundle?){super.onCreate(state);setContent{TerekDrive()}}
+ override fun onCreate(state:Bundle?){super.onCreate(state);requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_FULL_USER;setContent{TerekDrive()}}
 }
 
 @Composable private fun TerekDrive(){
  var tab by remember{mutableIntStateOf(0)}
  var sound by remember{mutableStateOf(true)}
- var animations by remember{mutableStateOf(true)}
+ var animations by rememberSaveable{mutableStateOf(true)}
+ var assistant by rememberSaveable{mutableIntStateOf(0)}
  MaterialTheme(colorScheme=darkColorScheme(background=BG,surface=PANEL,primary=RED,onBackground=Color.White,onSurface=Color.White)){
   Surface(Modifier.fillMaxSize(),color=BG){Column{
    Header(sound){sound=!sound}
    Box(Modifier.weight(1f)){when(tab){
-    0->MapScreen();1->DriveScreen(sound);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,{sound=!sound},{animations=!animations})
+    0->MapScreen();1->DriveScreen(sound,animations,assistant);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,{sound=!sound},{animations=!animations},{assistant=it})
    }}
    NavigationBar(containerColor=Color(0xFF090C10)){
     val items=listOf(Icons.Default.Map to"Карта",Icons.Default.Speed to"Драйв",Icons.Default.DirectionsCar to"Гараж",Icons.Default.MusicNote to"Медиа",Icons.Default.Settings to"Настройки")
@@ -137,7 +143,7 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
  })
 }
 
-@Composable private fun DriveScreen(sound:Boolean){
+@Composable private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int){
  var gauge by remember{mutableIntStateOf(0)};var speed by remember{mutableIntStateOf(0)}
  var running by remember{mutableStateOf(false)};var started by remember{mutableLongStateOf(0L)};var elapsed by remember{mutableLongStateOf(0L)}
  val context=LocalContext.current
@@ -151,7 +157,7 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
  LaunchedEffect(running){while(running){elapsed=SystemClock.elapsedRealtime()-started;kotlinx.coroutines.delay(50)}}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
   Text("DRIVE LAB",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 тем • GPS скорость • секундомер",color=MUTED,fontSize=12.sp)
-  Spacer(Modifier.height(8.dp));SpeedGauge(gauges[gauge],speed.coerceIn(0,gauges[gauge].max),Modifier.fillMaxWidth().height(280.dp))
+  Spacer(Modifier.height(8.dp));RoadAnimation(speed,animations,Modifier.fillMaxWidth().height(72.dp));Spacer(Modifier.height(8.dp));SpeedGauge(gauges[gauge],speed.coerceIn(0,gauges[gauge].max),Modifier.fillMaxWidth().height(280.dp))
   LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(gauges){i,g->Box(Modifier.width(100.dp).clip(RoundedCornerShape(14.dp)).background(if(i==gauge)g.color.copy(alpha=.18f)else PANEL).clickable{gauge=i}.padding(10.dp)){Text((i+1).toString()+". "+g.name,fontSize=10.sp,fontWeight=FontWeight.Bold)}}}
   Spacer(Modifier.height(12.dp));Row(horizontalArrangement=Arrangement.spacedBy(10.dp),modifier=Modifier.fillMaxWidth()){
    Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){Column(Modifier.padding(16.dp)){Text(speed.toString(),fontSize=34.sp,fontWeight=FontWeight.Black,color=CYAN);Text("км/ч • GPS",color=MUTED,fontSize=11.sp)}}
@@ -162,7 +168,7 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
    OutlinedButton({running=false;elapsed=0},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text("СБРОС")}
   }
   Spacer(Modifier.height(8.dp));Button({permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text("ВКЛЮЧИТЬ GPS-СКОРОСТЬ")}
-  Text(if(sound)"🔊 сигналы включены" else "🔇 сигналы выключены",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(top=6.dp))
+  Text(if(sound)"🔊 сигналы включены" else "🔇 сигналы выключены",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(top=6.dp));AssistantPanel(sound,assistant)
  }
 }
 
@@ -215,11 +221,11 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
  }
 }
 
-@Composable private fun SettingsScreen(sound:Boolean,animations:Boolean,toggleSound:()->Unit,toggleAnimations:()->Unit){
+@Composable private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,toggleSound:()->Unit,toggleAnimations:()->Unit,setAssistant:(Int)->Unit){
  var remote by remember{mutableStateOf("Проверить удалённую конфигурацию")};val context=LocalContext.current
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
   Text("НАСТРОЙКИ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("всё под контролем",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
-  SettingRow("🔊","Звук","Сигналы, подсказки и клики",sound,toggleSound);SettingRow("✨","Анимации","Пульсация, стрелки, переходы",animations,toggleAnimations)
+  SettingRow("🔊","Звук","Сигналы, подсказки и клики",sound,toggleSound);SettingRow("✨","Анимации","Пульсация, стрелки, переходы",animations,toggleAnimations);Spacer(Modifier.height(8.dp));AssistantSettings(assistant,setAssistant)
   Spacer(Modifier.height(8.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
    Text("ДИСТАНЦИОННЫЕ ОБНОВЛЕНИЯ",fontWeight=FontWeight.Black);Text(remote,color=MUTED,fontSize=11.sp);Spacer(Modifier.height(8.dp))
    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({remote="Проверяю…";Thread{remote=checkRemote()}.start()}){Icon(Icons.Default.CloudDownload,null);Spacer(Modifier.width(6.dp));Text("ПРОВЕРИТЬ")};OutlinedButton({context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL)))}){Text("РЕЛИЗЫ")}}
@@ -228,6 +234,71 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
  }
 }
 
+@Composable
+private fun RoadAnimation(speed:Int,enabled:Boolean,modifier:Modifier){
+ val shift by rememberInfiniteTransition(label="road").animateFloat(0f,1f,infiniteRepeatable(tween((1100-speed*4).coerceAtLeast(280)),RepeatMode.Restart),label="shift")
+ Canvas(modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF080B0F))){
+  val mid=size.width/2
+  if(enabled) for(i in 0..10){
+   val y=((i*90f)+(shift*90f))%(size.height+90f)-45f
+   val width=4f+(y/size.height)*10f
+   drawRoundRect(Color(0xFF4D5660),Offset(mid-width/2,y),androidx.compose.ui.geometry.Size(width,12f),6f,6f)
+  }
+  drawLine(CYAN,Offset(0f,size.height*.82f),Offset(size.width*.22f,size.height*.55f),3f)
+  drawLine(CYAN,Offset(size.width,size.height*.82f),Offset(size.width*.78f,size.height*.55f),3f)
+  drawCircle(RED,9f,Offset(mid,size.height*.82f))
+ }
+}
+
+@Composable
+private fun AssistantPanel(sound:Boolean,assistantIndex:Int){
+ var selected by rememberSaveable{mutableIntStateOf(assistantIndex)}
+ val context=LocalContext.current
+ var tts by remember{mutableStateOf<TextToSpeech?>(null)}
+ DisposableEffect(Unit){
+  var engine:TextToSpeech?=null
+  engine=TextToSpeech(context){status->if(status==TextToSpeech.SUCCESS)engine?.let{applyVoice(it,assistants[selected])}}
+  tts=engine
+  onDispose{engine?.stop();engine?.shutdown()}
+ }
+ val greeting=timeGreeting()
+ Column{
+  Spacer(Modifier.height(10.dp));Text("ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black,fontSize=15.sp)
+  Text("5 женских профилей • $greeting",color=MUTED,fontSize=10.sp)
+  LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(assistants){i,a->
+   Box(Modifier.width(112.dp).clip(RoundedCornerShape(14.dp)).background(if(i==selected)RED.copy(alpha=.18f)else PANEL).clickable{selected=i;tts?.let{applyVoice(it,a)}}.padding(11.dp)){
+    Text(a.name,fontWeight=FontWeight.Bold,fontSize=12.sp);Text("голос ${i+1}",color=MUTED,fontSize=9.sp)
+   }
+  }}
+  Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth().padding(top=8.dp)){
+   Button({if(sound)tts?.let{applyVoice(it,assistants[selected]);it.speak("$greeting, водитель. Хорошей дороги!",TextToSpeech.QUEUE_FLUSH,null,"greeting")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Icon(Icons.Default.RecordVoiceOver,null);Spacer(Modifier.width(6.dp));Text("ПРИВЕТСТВИЕ")}
+   OutlinedButton({if(sound)tts?.speak("Впереди спокойный участок. Соблюдайте скорость и следите за дорогой.",TextToSpeech.QUEUE_FLUSH,null,"hint")},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПОДСКАЗКА")}
+  }
+ }
+}
+
+private fun applyVoice(tts:TextToSpeech,profile:Assistant){
+ tts.language=Locale("ru","RU")
+ val voices=tts.voices?.filter{it.locale.language=="ru"}.orEmpty()
+ if(voices.isNotEmpty())tts.voice=voices[(profile.name.hashCode().and(Int.MAX_VALUE))%voices.size]
+ tts.setPitch(profile.pitch);tts.setSpeechRate(profile.rate)
+}
+private fun timeGreeting():String{
+ val h=java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+ return when(h){in 5..11->"Доброе утро";in 12..17->"Добрый день";in 18..22->"Добрый вечер";else->"Доброй ночи"}
+}
+@Composable
+private fun AssistantSettings(selected:Int,onSelect:(Int)->Unit){
+ Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+  Column(Modifier.padding(16.dp)){
+   Text("ГОЛОСОВЫЕ ПОМОЩНИКИ",fontWeight=FontWeight.Black)
+   Text("5 профилей. Реальные доступные голоса зависят от TTS-движка телефона.",color=MUTED,fontSize=10.sp)
+   assistants.forEachIndexed{i,a->Row(Modifier.fillMaxWidth().clickable{onSelect(i)}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
+    RadioButton(selected==i,{onSelect(i)});Text(a.name,fontWeight=FontWeight.Bold);Spacer(Modifier.width(8.dp));Text("тембр ${a.pitch} • скорость ${a.rate}",color=MUTED,fontSize=9.sp)
+   }}
+  }
+ }
+}
 @Composable private fun SettingRow(icon:String,title:String,subtitle:String,value:Boolean,onChange:()->Unit){
  Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth().padding(bottom=8.dp)){Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically){
   Text(icon,fontSize=22.sp);Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(title,fontWeight=FontWeight.Bold);Text(subtitle,color=MUTED,fontSize=10.sp)};Switch(value,onChange)
