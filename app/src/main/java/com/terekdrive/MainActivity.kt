@@ -266,7 +266,7 @@ private fun AssistantPanel(sound:Boolean,assistantIndex:Int,language:Int){
  var tts by remember{mutableStateOf<TextToSpeech?>(null)}
  DisposableEffect(Unit){
   var engine:TextToSpeech?=null
-  engine=TextToSpeech(context){status->if(status==TextToSpeech.SUCCESS)engine?.let{applyVoice(it,assistants[selected])}}
+  engine=TextToSpeech(context){status->if(status==TextToSpeech.SUCCESS)engine?.let{applyVoice(it,assistants[selected],language)}}
   tts=engine
   onDispose{engine?.stop();engine?.shutdown()}
  }
