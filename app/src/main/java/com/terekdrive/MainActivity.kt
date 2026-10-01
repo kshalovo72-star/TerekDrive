@@ -118,7 +118,7 @@ class MainActivity:ComponentActivity(){
    MapView(ctx).also{v->v.onCreate(null);v.onStart();v.onResume();v.getMapAsync{map->
     map.setStyle(STYLE_URL);map.cameraPosition=CameraPosition.Builder().target(LatLng(43.3178,45.6985)).zoom(11.0).build()
    }}
-  })
+  },onRelease={v->v.onPause();v.onStop();v.onDestroy()})
   Column(Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter)){
    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xEE111820)).padding(12.dp),verticalAlignment=Alignment.CenterVertically){
     Icon(Icons.Default.Map,null,tint=CYAN);Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text("MAPLIBRE • OPENFREEMAP",fontWeight=FontWeight.Black,fontSize=12.sp);Text(status,color=MUTED,fontSize=10.sp)};Text("OFFLINE",color=GREEN,fontWeight=FontWeight.Black,fontSize=10.sp)
