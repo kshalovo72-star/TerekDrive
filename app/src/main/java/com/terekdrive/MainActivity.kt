@@ -231,13 +231,13 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
 }
 
 @Composable private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int,toggleSound:()->Unit,toggleAnimations:()->Unit,setAssistant:(Int)->Unit,setLanguage:(Int)->Unit){
- var remote by remember{mutableStateOf("Проверить удалённую конфигурацию")};val context=LocalContext.current
+ var remote by remember{mutableStateOf("Проверить удалённую конфигурацию")};val context=LocalContext.current;val scope=rememberCoroutineScope()
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
   Text("НАСТРОЙКИ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("всё под контролем",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
   SettingRow("🔊","Звук","Сигналы, подсказки и клики",sound,toggleSound);SettingRow("✨","Анимации","Пульсация, стрелки, переходы",animations,toggleAnimations);Spacer(Modifier.height(8.dp));AssistantSettings(assistant,setAssistant);Spacer(Modifier.height(8.dp));LanguageSettings(language,setLanguage)
   Spacer(Modifier.height(8.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
    Text("ДИСТАНЦИОННЫЕ ОБНОВЛЕНИЯ",fontWeight=FontWeight.Black);Text(remote,color=MUTED,fontSize=11.sp);Spacer(Modifier.height(8.dp))
-   Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({remote="Проверяю…";Thread{remote=checkRemote()}.start()}){Icon(Icons.Default.CloudDownload,null);Spacer(Modifier.width(6.dp));Text("ПРОВЕРИТЬ")};OutlinedButton({context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL)))}){Text("РЕЛИЗЫ")}}
+   Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({remote="Проверяю…";scope.launch{remote=withContext(Dispatchers.IO){checkRemote()}}}){Icon(Icons.Default.CloudDownload,null);Spacer(Modifier.width(6.dp));Text("ПРОВЕРИТЬ")};OutlinedButton({context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL)))}){Text("РЕЛИЗЫ")}}
   }}
   Spacer(Modifier.height(8.dp));Text("Контент и конфиг можно менять удалённо без пересборки APK. Для новой версии кода GitHub Actions автоматически собирает APK.",color=MUTED,fontSize=10.sp)
  }
@@ -274,27 +274,29 @@ private fun AssistantPanel(sound:Boolean,assistantIndex:Int,language:Int){
  LaunchedEffect(tts,sound){
   if(sound && tts!=null){
    val hello=greeting+", водитель. Я "+assistants[selected].name+". Хорошей дороги!"
-   tts?.let{applyVoice(it,assistants[selected]);it.speak(hello,TextToSpeech.QUEUE_FLUSH,null,"auto_greeting")}
+   tts?.let{applyVoice(it,assistants[selected],language);it.speak(hello,TextToSpeech.QUEUE_FLUSH,null,"auto_greeting")}
   }
  }
  Column{
   Spacer(Modifier.height(10.dp));Text("ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black,fontSize=15.sp)
   Text("5 женских профилей • ${languages[language].name} • $greeting",color=MUTED,fontSize=10.sp)
   LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(assistants){i,a->
-   Box(Modifier.width(112.dp).clip(RoundedCornerShape(14.dp)).background(if(i==selected)RED.copy(alpha=.18f)else PANEL).clickable{selected=i;tts?.let{applyVoice(it,a)}}.padding(11.dp)){
+   Box(Modifier.width(112.dp).clip(RoundedCornerShape(14.dp)).background(if(i==selected)RED.copy(alpha=.18f)else PANEL).clickable{selected=i;tts?.let{applyVoice(it,a,language)}}.padding(11.dp)){
     Text(a.name,fontWeight=FontWeight.Bold,fontSize=12.sp);Text("голос ${i+1}",color=MUTED,fontSize=9.sp)
    }
   }}
   Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth().padding(top=8.dp)){
-   Button({if(sound)tts?.let{applyVoice(it,assistants[selected]);it.speak("$greeting, водитель. Хорошей дороги!",TextToSpeech.QUEUE_FLUSH,null,"greeting")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Icon(Icons.Default.RecordVoiceOver,null);Spacer(Modifier.width(6.dp));Text("ПРИВЕТСТВИЕ")}
+   Button({if(sound)tts?.let{applyVoice(it,assistants[selected],language);it.speak("$greeting, водитель. Хорошей дороги!",TextToSpeech.QUEUE_FLUSH,null,"greeting")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Icon(Icons.Default.RecordVoiceOver,null);Spacer(Modifier.width(6.dp));Text("ПРИВЕТСТВИЕ")}
    OutlinedButton({if(sound)tts?.speak("Впереди спокойный участок. Соблюдайте скорость и следите за дорогой.",TextToSpeech.QUEUE_FLUSH,null,"hint")},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПОДСКАЗКА")}
   }
  }
 }
 
-private fun applyVoice(tts:TextToSpeech,profile:Assistant){
- tts.language=Locale(languages[language].tag)
- val voices=tts.voices?.filter{it.locale.language=="ru"}.orEmpty()
+private fun applyVoice(tts:TextToSpeech,profile:Assistant,languageIndex:Int){
+ val requested=Locale(languages[languageIndex].tag)
+ val result=tts.setLanguage(requested)
+ val actualLanguage=if(result==TextToSpeech.LANG_MISSING_DATA||result==TextToSpeech.LANG_NOT_SUPPORTED) Locale.getDefault() else requested
+ val voices=tts.voices?.filter{it.locale.language==actualLanguage.language}.orEmpty()
  if(voices.isNotEmpty())tts.voice=voices[(profile.name.hashCode().and(Int.MAX_VALUE))%voices.size]
  tts.setPitch(profile.pitch);tts.setSpeechRate(profile.rate)
 }
