@@ -1,6 +1,6 @@
 {
-  "version": 7,
-  "message": "Терек Драйв 1.6: удобная навигация, быстрый доступ и маршруты от GPS.",
+  "version": 8,
+  "message": "Терек Драйв 1.7: живой GPS-спидометр, красная зона и эффекты.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
@@ -16,5 +16,7 @@
   "search_history": true,
   "navigation_v2": true,
   "gps_route_origin": true,
-  "quick_navigation": true
+  "quick_navigation": true,
+  "speedometer_live": true,
+  "speed_redline_effects": true
 }
