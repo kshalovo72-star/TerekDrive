@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -122,7 +123,7 @@ class MainActivity:ComponentActivity(){
  var status by remember{mutableStateOf("Онлайн-карта готова")}
  val context=LocalContext.current
  Box(Modifier.fillMaxSize().padding(10.dp).clip(RoundedCornerShape(24.dp))){
-  AndroidView(Modifier.fillMaxSize(),factory={ctx->
+  AndroidView(factory={ctx->
    MapView(ctx).also{v->v.onCreate(null);v.onStart();v.onResume();v.getMapAsync{map->
     map.setStyle(STYLE_URL);map.cameraPosition=CameraPosition.Builder().target(LatLng(43.3178,45.6985)).zoom(11.0).build()
    }}
@@ -213,8 +214,8 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
  LaunchedEffect(loading){if(loading){weather=withContext(Dispatchers.IO){runCatching{
   val c=URL("https://api.open-meteo.com/v1/forecast?latitude=43.3178&longitude=45.6985&current=temperature_2m,wind_speed_10m,weather_code&timezone=auto").openConnection() as HttpURLConnection
   c.connectTimeout=7000;c.readTimeout=7000;val body=c.inputStream.bufferedReader().use{it.readText()};c.disconnect()
-  val temp=Regex("\\"temperature_2m\\"\\s*:\\s*(-?[0-9.]+)").find(body)?.groupValues?.get(1)?:"?"
-  val wind=Regex("\\"wind_speed_10m\\"\\s*:\\s*([0-9.]+)").find(body)?.groupValues?.get(1)?:"?"
+  val temp=Regex("""\"temperature_2m\"\s*:\s*(-?[0-9.]+)""").find(body)?.groupValues?.get(1)?:"?"
+  val wind=Regex("""\"wind_speed_10m\"\s*:\s*([0-9.]+)""").find(body)?.groupValues?.get(1)?:"?"
   "Грозный • "+temp+"°C • ветер "+wind+" км/ч"
  }.getOrElse{"Погода пока недоступна"}};loading=false}}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
@@ -251,7 +252,7 @@ private fun RoadAnimation(speed:Int,enabled:Boolean,modifier:Modifier){
   if(enabled) for(i in 0..10){
    val y=((i*90f)+(shift*90f))%(size.height+90f)-45f
    val width=4f+(y/size.height)*10f
-   drawRoundRect(Color(0xFF4D5660),Offset(mid-width/2,y),androidx.compose.ui.geometry.Size(width,12f),6f,6f)
+   drawRoundRect(color=Color(0xFF4D5660),topLeft=Offset(mid-width/2,y),size=androidx.compose.ui.geometry.Size(width,12f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(6f,6f))
   }
   drawLine(CYAN,Offset(0f,size.height*.82f),Offset(size.width*.22f,size.height*.55f),3f)
   drawLine(CYAN,Offset(size.width,size.height*.82f),Offset(size.width*.78f,size.height*.55f),3f)
@@ -351,10 +352,10 @@ private fun SplashScreen(){
 }
 @Composable private fun SettingRow(icon:String,title:String,subtitle:String,value:Boolean,onChange:()->Unit){
  Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth().padding(bottom=8.dp)){Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically){
-  Text(icon,fontSize=22.sp);Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(title,fontWeight=FontWeight.Bold);Text(subtitle,color=MUTED,fontSize=10.sp)};Switch(value,onChange)
+  Text(icon,fontSize=22.sp);Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(title,fontWeight=FontWeight.Bold);Text(subtitle,color=MUTED,fontSize=10.sp)};Switch(checked=value,onCheckedChange={onChange()})
  }}
 }
 
 private fun checkRemote():String{
- return runCatching{val c=URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection;c.connectTimeout=5000;c.readTimeout=5000;val body=c.inputStream.bufferedReader().use{it.readText()};c.disconnect();Regex("\\"message\\"\\s*:\\s*\\"([^\\"]+)\\"").find(body)?.groupValues?.get(1)?:"Конфигурация обновлена"}.getOrElse{"Нет сети — локальные настройки сохранены"}
+ return runCatching{val c=URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection;c.connectTimeout=5000;c.readTimeout=5000;val body=c.inputStream.bufferedReader().use{it.readText()};c.disconnect();Regex("""\"message\"\s*:\s*\"([^\"]+)\"""").find(body)?.groupValues?.get(1)?:"Конфигурация обновлена"}.getOrElse{"Нет сети — локальные настройки сохранены"}
 }
