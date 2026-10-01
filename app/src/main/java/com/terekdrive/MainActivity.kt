@@ -99,7 +99,7 @@ class MainActivity:ComponentActivity(){
   AnimatedContent(targetState=splash,transitionSpec={fadeIn(tween(450))+scaleIn(initialScale=.88f,tween(650)) togetherWith fadeOut(tween(300))},label="startup"){showSplash->if(showSplash) SplashScreen() else Column{
    Header(sound){sound=!sound}
    Box(Modifier.weight(1f)){when(tab){
-    0->MapScreen();1->DriveScreen(sound,animations,assistant);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
+    0->MapScreen();1->DriveScreen(sound,animations,assistant,language);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
    }}
    NavigationBar(containerColor=Color(0xFF090C10)){
     val items=listOf(Icons.Default.Map to"Карта",Icons.Default.Speed to"Драйв",Icons.Default.DirectionsCar to"Гараж",Icons.Default.MusicNote to"Медиа",Icons.Default.Settings to"Настройки")
@@ -260,7 +260,7 @@ private fun RoadAnimation(speed:Int,enabled:Boolean,modifier:Modifier){
 }
 
 @Composable
-private fun AssistantPanel(sound:Boolean,assistantIndex:Int){
+private fun AssistantPanel(sound:Boolean,assistantIndex:Int,language:Int){
  var selected by remember(assistantIndex){mutableIntStateOf(assistantIndex)}
  val context=LocalContext.current
  var tts by remember{mutableStateOf<TextToSpeech?>(null)}
