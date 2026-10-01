@@ -197,127 +197,24 @@ private fun downloadOffline(context:android.content.Context,done:(String)->Unit)
 }
 
 @Composable private fun GarageScreen(){
- var selected by remember{mutableIntStateOf(0)};val car=cars[selected]
+ var selected by rememberSaveable{mutableIntStateOf(0)};val car=cars[selected]
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-  Text("МОЙ ГАРАЖ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 машин • живой выбор",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
-  LazyRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){itemsIndexed(cars){i,c->Column(Modifier.width(150.dp).clip(RoundedCornerShape(20.dp)).background(if(i==selected)Color(0xFF211317)else PANEL).border(1.dp,if(i==selected)RED else Color(0xFF252C34),RoundedCornerShape(20.dp)).clickable{selected=i}.padding(12.dp)){
-   Box(Modifier.fillMaxWidth().height(88.dp).background(Color(0xFF0A0E12)),contentAlignment=Alignment.Center){Text("🚘",fontSize=52.sp)};Spacer(Modifier.height(8.dp));Text(c.name,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(c.hp.toString()+" л.с. • "+c.top+" км/ч",color=MUTED,fontSize=10.sp)
+  Text("МОЙ ГАРАЖ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 машин • характеристики • режимы",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
+  Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically){
+   Text(carEmoji(car.type),fontSize=72.sp);Spacer(Modifier.width(14.dp));Column{Text(car.name,fontSize=24.sp,fontWeight=FontWeight.Black);Text(car.type,color=RED,fontWeight=FontWeight.Bold);Text("Подготовлена для DRIVE режима",color=MUTED,fontSize=10.sp)}
+  }}
+  Spacer(Modifier.height(12.dp))
+  LazyRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){itemsIndexed(cars){i,c->Column(Modifier.width(155.dp).clip(RoundedCornerShape(20.dp)).background(if(i==selected)Color(0xFF211317)else PANEL).border(1.dp,if(i==selected)RED else Color(0xFF252C34),RoundedCornerShape(20.dp)).clickable{selected=i}.padding(12.dp)){
+   Box(Modifier.fillMaxWidth().height(92.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFF0A0E12)),contentAlignment=Alignment.Center){Text(carEmoji(c.type),fontSize=54.sp)}
+   Spacer(Modifier.height(8.dp));Text(c.name,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(c.hp.toString()+" л.с. • "+c.top+" км/ч",color=MUTED,fontSize=10.sp)
   }}}
-  Spacer(Modifier.height(18.dp));Text(car.name,fontSize=28.sp,fontWeight=FontWeight.Black);Text(car.type+" • "+car.hp+" л.с. • "+car.top+" км/ч",color=MUTED)
- }
-}
-
-@Composable private fun MediaScreen(sound:Boolean){
- var player by remember{mutableStateOf<MediaPlayer?>(null)};var title by remember{mutableStateOf("Музыка не выбрана")}
- var weather by remember{mutableStateOf("Нажми «Обновить»")};var loading by remember{mutableStateOf(false)}
- val context=LocalContext.current
- val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri:Uri?->uri?.let{player?.release();player=MediaPlayer.create(context,it);title=it.lastPathSegment?:"Трек";if(sound)ToneGenerator(AudioManager.STREAM_NOTIFICATION,80).startTone(ToneGenerator.TONE_PROP_BEEP,120)}}
- DisposableEffect(Unit){onDispose{player?.release()}}
- LaunchedEffect(loading){if(loading){weather=withContext(Dispatchers.IO){runCatching{
-  val c=URL("https://api.open-meteo.com/v1/forecast?latitude=43.3178&longitude=45.6985&current=temperature_2m,wind_speed_10m,weather_code&timezone=auto").openConnection() as HttpURLConnection
-  c.connectTimeout=7000;c.readTimeout=7000;val body=c.inputStream.bufferedReader().use{it.readText()};c.disconnect()
-  val temp=Regex("""\"temperature_2m\"\s*:\s*(-?[0-9.]+)""").find(body)?.groupValues?.get(1)?:"?"
-  val wind=Regex("""\"wind_speed_10m\"\s*:\s*([0-9.]+)""").find(body)?.groupValues?.get(1)?:"?"
-  "Грозный • "+temp+"°C • ветер "+wind+" км/ч"
- }.getOrElse{"Погода пока недоступна"}};loading=false}}
- Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-  Text("МЕДИА",fontSize=25.sp,fontWeight=FontWeight.Black);Text("музыка • погода • таймеры",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
-  Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
-   Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.MusicNote,null,tint=RED);Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text("ПЛЕЕР",fontWeight=FontWeight.Black);Text(title,color=MUTED,fontSize=11.sp)};IconButton({player?.let{if(it.isPlaying)it.pause() else it.start()}}){Icon(Icons.Default.PlayArrow,null)}}
-   Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({picker.launch("audio/*")}){Icon(Icons.Default.LibraryMusic,null);Spacer(Modifier.width(6.dp));Text("ВЫБРАТЬ ТРЕК")};OutlinedButton({player?.seekTo(0);player?.pause()}){Text("СТОП")}}
-  }}
-  Spacer(Modifier.height(10.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically){
-   Icon(Icons.Default.Cloud,null,tint=CYAN);Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text("ПОГОДА • ГРОЗНЫЙ",fontWeight=FontWeight.Black);Text(weather,color=MUTED,fontSize=11.sp)};IconButton({loading=true}){Icon(Icons.Default.Refresh,null)}
-  }}
-  Spacer(Modifier.height(10.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){Text("ЗВУК",fontWeight=FontWeight.Black);Text(if(sound)"Системные сигналы включены" else "Звук выключен",color=MUTED,fontSize=11.sp)}}
- }
-}
-
-@Composable private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int,toggleSound:()->Unit,toggleAnimations:()->Unit,setAssistant:(Int)->Unit,setLanguage:(Int)->Unit){
- var remote by remember{mutableStateOf("Проверить удалённую конфигурацию")};val context=LocalContext.current;val scope=rememberCoroutineScope()
- Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-  Text("НАСТРОЙКИ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("всё под контролем",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
-  SettingRow("🔊","Звук","Сигналы, подсказки и клики",sound,toggleSound);SettingRow("✨","Анимации","Пульсация, стрелки, переходы",animations,toggleAnimations);Spacer(Modifier.height(8.dp));AssistantSettings(assistant,setAssistant);Spacer(Modifier.height(8.dp));LanguageSettings(language,setLanguage)
-  Spacer(Modifier.height(8.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
-   Text("ДИСТАНЦИОННЫЕ ОБНОВЛЕНИЯ",fontWeight=FontWeight.Black);Text(remote,color=MUTED,fontSize=11.sp);Spacer(Modifier.height(8.dp))
-   Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({remote="Проверяю…";scope.launch{remote=withContext(Dispatchers.IO){checkRemote()}}}){Icon(Icons.Default.CloudDownload,null);Spacer(Modifier.width(6.dp));Text("ПРОВЕРИТЬ")};OutlinedButton({context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL)))}){Text("РЕЛИЗЫ")}}
-  }}
-  Spacer(Modifier.height(8.dp));Text("Контент и конфиг можно менять удалённо без пересборки APK. Для новой версии кода GitHub Actions автоматически собирает APK.",color=MUTED,fontSize=10.sp)
- }
-}
-
-@Composable
-private fun RoadAnimation(speed:Int,enabled:Boolean,modifier:Modifier){
- val shift by rememberInfiniteTransition(label="road").animateFloat(0f,1f,infiniteRepeatable(tween((1100-speed*4).coerceAtLeast(280)),RepeatMode.Restart),label="shift")
- Canvas(modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF080B0F))){
-  val mid=size.width/2
-  if(enabled) for(i in 0..10){
-   val y=((i*90f)+(shift*90f))%(size.height+90f)-45f
-   val width=4f+(y/size.height)*10f
-   drawRoundRect(color=Color(0xFF4D5660),topLeft=Offset(mid-width/2,y),size=androidx.compose.ui.geometry.Size(width,12f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(6f,6f))
-  }
-  drawLine(CYAN,Offset(0f,size.height*.82f),Offset(size.width*.22f,size.height*.55f),3f)
-  drawLine(CYAN,Offset(size.width,size.height*.82f),Offset(size.width*.78f,size.height*.55f),3f)
-  drawCircle(RED,9f,Offset(mid,size.height*.82f))
- }
-}
-
-@Composable
-private fun AssistantPanel(sound:Boolean,assistantIndex:Int,language:Int){
- val context=LocalContext.current
- var tts by remember{mutableStateOf<TextToSpeech?>(null)}
- DisposableEffect(Unit){
-  var engine:TextToSpeech?=null
-  engine=TextToSpeech(context){status->if(status==TextToSpeech.SUCCESS)engine?.let{applyVoice(it,gena,language)}}
-  tts=engine
-  onDispose{engine?.stop();engine?.shutdown()}
- }
- Column{
-  Spacer(Modifier.height(10.dp));Text("ГЕНА • ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black,fontSize=15.sp)
-  Text("Один голос • "+languages[language].name+" • навигационные подсказки",color=MUTED,fontSize=10.sp)
-  Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth().padding(top=8.dp)){
-   Box(Modifier.size(54.dp).clip(RoundedCornerShape(16.dp)).background(RED),contentAlignment=Alignment.Center){Text("Г",fontSize=28.sp,fontWeight=FontWeight.Black)}
-   Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text("Гена",fontSize=18.sp,fontWeight=FontWeight.Black);Text("спокойный мужской голос • TTS",color=MUTED,fontSize=10.sp)}
-   Icon(Icons.Default.RecordVoiceOver,null,tint=GREEN)
-  }
-  Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth().padding(top=8.dp)){
-   Button({if(sound)tts?.let{applyVoice(it,gena,language);it.speak("Гена на связи. Хорошей дороги!",TextToSpeech.QUEUE_FLUSH,null,"greeting")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПРОВЕРИТЬ ГЕНУ")}
-   OutlinedButton({if(sound)tts?.let{applyVoice(it,gena,language);it.speak("Следите за скоростью, держите дистанцию и не отвлекайтесь от дороги.",TextToSpeech.QUEUE_FLUSH,null,"hint")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПОДСКАЗКА")}
+  Spacer(Modifier.height(12.dp));Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
+   SpecCard("МОЩНОСТЬ",car.hp.toString()+" л.с.",RED,Modifier.weight(1f));SpecCard("МАКС.",car.top.toString()+" км/ч",CYAN,Modifier.weight(1f));SpecCard("КЛАСС",car.type,GREEN,Modifier.weight(1f))
   }
  }
 }
-private fun applyVoice(tts:TextToSpeech,profile:Assistant,languageIndex:Int){
- val requested=Locale(languages[languageIndex].tag)
- val result=tts.setLanguage(requested)
- val actual=if(result==TextToSpeech.LANG_MISSING_DATA||result==TextToSpeech.LANG_NOT_SUPPORTED)Locale.getDefault() else requested
- val voices=tts.voices?.filter{it.locale.language==actual.language}.orEmpty()
- if(voices.isNotEmpty())tts.voice=voices.first()
- tts.setPitch(profile.pitch);tts.setSpeechRate(profile.rate)
-}
-@Composable
-private fun AssistantSettings(selected:Int,onSelect:(Int)->Unit){
- Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
-  Text("ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black)
-  Text("Гена — единственный голос приложения.",color=MUTED,fontSize=10.sp)
-  Row(Modifier.fillMaxWidth().padding(top=8.dp),verticalAlignment=Alignment.CenterVertically){
-   RadioButton(true,{onSelect(0)});Text("Гена",fontWeight=FontWeight.Bold);Spacer(Modifier.width(8.dp));Text("мужской • спокойный",color=MUTED,fontSize=10.sp)
-  }
- }}
-}
-@Composable
-private fun SplashScreen(){
- val inf=rememberInfiniteTransition(label="splash");val pulse by inf.animateFloat(.86f,1.12f,infiniteRepeatable(tween(900),RepeatMode.Reverse),label="pulse")
- Box(Modifier.fillMaxSize().background(BG),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){
-  Box(Modifier.size((82*pulse).dp).clip(RoundedCornerShape(27.dp)).background(RED),contentAlignment=Alignment.Center){Text("TD",fontSize=30.sp,fontWeight=FontWeight.Black)}
-  Spacer(Modifier.height(18.dp));Text("ТЕРЕК ДРАЙВ",fontSize=28.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp);Text("DRIVE • NAVIGATION • MUSIC",fontSize=10.sp,color=MUTED,letterSpacing=1.5.sp);Spacer(Modifier.height(18.dp));Text("Готовим маршрут…",fontSize=12.sp,color=Color.White)
- }}
-}
-@Composable private fun SettingRow(icon:String,title:String,subtitle:String,value:Boolean,onChange:()->Unit){
- Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth().padding(bottom=8.dp)){Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically){
-  Text(icon,fontSize=22.sp);Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(title,fontWeight=FontWeight.Bold);Text(subtitle,color=MUTED,fontSize=10.sp)};Switch(checked=value,onCheckedChange={onChange()})
- }}
+private fun carEmoji(type:String)=when(type){"SUV"->"🚙";"SUPER"->"🏎️";"MUSCLE"->"🚗";else->"🏎️"}
+@Composable private fun SpecCard(title:String,value:String,tint:Color,modifier:Modifier){
+ Card(modifier,colors=CardDefaults.cardColors(containerColor=PANEL)){Column(Modifier.padding(12.dp)){Text(title,color=MUTED,fontSize=8.sp);Text(value,color=tint,fontSize=13.sp,fontWeight=FontWeight.Black)}}
 }
 
-private fun checkRemote():String{
- return runCatching{val c=URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection;c.connectTimeout=5000;c.readTimeout=5000;val body=c.inputStream.bufferedReader().use{it.readText()};c.disconnect();Regex("""\"message\"\s*:\s*\"([^\"]+)\"""").find(body)?.groupValues?.get(1)?:"Конфигурация обновлена"}.getOrElse{"Нет сети — локальные настройки сохранены"}
-}
