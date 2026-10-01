@@ -1,6 +1,6 @@
 {
-  "version": 4,
-  "message": "Терек Драйв 1.3: новая GPS-приборка, живой спидометр и обновлённый гараж.",
+  "version": 5,
+  "message": "Терек Драйв 1.4: Гена, быстрый вызов, голосовые ответы и новые шутки.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
@@ -8,5 +8,7 @@
   "seasonal_theme": true,
   "update_notifications": true,
   "gps_speedometer": true,
-  "live_car_garage": true
+  "live_car_garage": true,
+  "gena_chat": true,
+  "gena_voice_input": true
 }
