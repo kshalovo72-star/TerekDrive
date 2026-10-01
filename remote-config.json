@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "message": "Терек Драйв: удалённая конфигурация активна.",
+  "music_mode": "local_picker",
+  "weather": "open-meteo",
+  "map_style": "openfreemap-liberty",
+  "offline_region": "Grozny"
+}
