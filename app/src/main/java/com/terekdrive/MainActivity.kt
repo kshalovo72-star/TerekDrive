@@ -13,6 +13,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -92,6 +93,9 @@ private const val RELEASES_URL = "https://github.com/kshalovo72-star/TerekDrive/
 private const val REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/kshalovo72-star/TerekDrive/main/remote-config.json"
 private const val PREFS = "terek_drive"
 private const val PREF_LAST_UPDATE = "last_notified_update"
+private const val PREF_SEARCH_HISTORY = "search_history"
+private const val GROZNY_LAT = 43.3178
+private const val GROZNY_LON = 45.6985
 
 private val BG = Color(0xFF07090C)
 private val PANEL = Color(0xFF10151B)
@@ -153,9 +157,53 @@ class MainActivity:ComponentActivity(){
         requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         createUpdateChannel(this)
         setContent{TerekDrive()}
+        playStartupSound(this)
     }
 }
 
+
+private fun playStartupSound(context:Context){
+    runCatching{
+        val tg=ToneGenerator(AudioManager.STREAM_MUSIC,85)
+        Thread{
+            try{tg.startTone(ToneGenerator.TONE_PROP_BEEP2,90);Thread.sleep(110);tg.startTone(ToneGenerator.TONE_PROP_ACK,110);Thread.sleep(130);tg.startTone(ToneGenerator.TONE_PROP_BEEP,180)}
+            finally{tg.release()}
+        }.start()
+    }
+}
+private data class WeatherState(val temp:Double,val feels:Double,val wind:Double,val humidity:Int,val code:Int)
+private fun weatherText(code:Int)=when(code){0->"Ясно";1,2->"Переменная облачность";3->"Пасмурно";45,48->"Туман";51,53,55->"Морось";61,63,65,80,81,82->"Дождь";71,73,75,77,85,86->"Снег";95,96,99->"Гроза";else->"Погода"}
+private fun weatherIcon(code:Int)=when(code){0->"☀";1,2->"⛅";3->"☁";45,48->"🌫";51,53,55,61,63,65,80,81,82->"🌧";71,73,75,77,85,86->"❄";95,96,99->"⛈";else->"🌤"}
+private fun fetchWeather():WeatherState?=runCatching{
+    val u=URL("https://api.open-meteo.com/v1/forecast?latitude=$GROZNY_LAT&longitude=$GROZNY_LON&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m").openConnection() as HttpURLConnection
+    u.connectTimeout=6000;u.readTimeout=6000
+    val o=JSONObject(u.inputStream.bufferedReader().use{it.readText()});u.disconnect();val x=o.getJSONObject("current")
+    WeatherState(x.getDouble("temperature_2m"),x.getDouble("apparent_temperature"),x.getDouble("wind_speed_10m"),x.getInt("relative_humidity_2m"),x.getInt("weather_code"))
+}.getOrNull()
+@Composable
+private fun WeatherOverlay(season:Season,animations:Boolean){
+    var weather by remember{mutableStateOf<WeatherState?>(null)}
+    LaunchedEffect(Unit){weather=withContext(Dispatchers.IO){fetchWeather()}}
+    Box(Modifier.fillMaxSize()){
+        val flow by rememberInfiniteTransition(label="weather").animateFloat(0f,1f,infiniteRepeatable(tween(if(animations)1200 else 9000),RepeatMode.Restart),label="weather-flow")
+        Canvas(Modifier.fillMaxSize()){
+            val code=weather?.code?:0
+            val rain=code in 51..67 || code in 80..82;val snow=code in 71..77 || code in 85..86;val storm=code in 95..99
+            if(rain)repeat(if(animations)55 else 10){i->{val x=((i*83)%100)/100f*size.width;val y=((i*47)%100)/100f*size.height+flow*size.height;drawLine(Color(0xFF78BFFF).copy(alpha=.30f),Offset(x,y),Offset(x-5f,y+16f),2f)}}
+            if(snow)repeat(if(animations)42 else 8){i->{val x=(((i*71)%100)/100f*size.width+sin((flow+i)*4f)*12f)%size.width;val y=(((i*53)%100)/100f*size.height+flow*size.height)%size.height;drawCircle(Color.White.copy(alpha=.62f),if(i%3==0)3.2f else 2f,Offset(x,y))}}
+            if(storm&&((flow>.04f&&flow<.11f)||(flow>.55f&&flow<.59f)))drawRect(Color.White.copy(alpha=.15f))
+        }
+        weather?.let{w->
+            Card(colors=CardDefaults.cardColors(containerColor=Color(0xDD0D141B)),modifier=Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(12.dp)){
+                Row(Modifier.padding(10.dp),verticalAlignment=Alignment.CenterVertically){
+                    Text(weatherIcon(w.code),fontSize=28.sp);Spacer(Modifier.width(9.dp))
+                    Column(Modifier.weight(1f)){Text(weatherText(w.code),fontWeight=FontWeight.Black,fontSize=12.sp);Text("Грозный • ощущается %.0f°C • ветер %.0f км/ч".format(w.feels,w.wind),color=MUTED,fontSize=8.sp)}
+                    Column(horizontalAlignment=Alignment.End){Text("%.0f°".format(w.temp),color=season.accent,fontSize=21.sp,fontWeight=FontWeight.Black);Text("влажн. "+w.humidity+"%",color=MUTED,fontSize=8.sp)}
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun TerekDrive(){
     val season=currentSeason()
@@ -495,6 +543,7 @@ private fun MapScreen(season:Season){
             onRelease={v->v.onPause();v.onStop();v.onDestroy()},
             modifier=Modifier.fillMaxSize()
         )
+        WeatherOverlay(season,true)
         Column(Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter)){
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xEE111820)).padding(12.dp),verticalAlignment=Alignment.CenterVertically){
                 Icon(Icons.Default.Map,null,tint=season.accent);Spacer(Modifier.width(10.dp))
@@ -693,12 +742,23 @@ private fun RoadAnimation(speed:Float,animations:Boolean,modifier:Modifier){
 private data class Maneuver(val instruction:String,val distance:Int,val icon:String)
 private data class RouteResult(val distanceKm:Double,val durationMin:Int,val maneuvers:List<Maneuver>)
 
+
+private fun loadSearchHistory(context:Context):List<String>{
+    return context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(PREF_SEARCH_HISTORY,"").orEmpty().split("|").map{it.trim()}.filter{it.isNotBlank()}.distinct().take(8)
+}
+private fun saveSearchHistory(context:Context,value:String){
+    val clean=value.trim();if(clean.isBlank())return
+    val old=loadSearchHistory(context);val next=(listOf(clean)+old.filterNot{it.equals(clean,true)}).take(8)
+    context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString(PREF_SEARCH_HISTORY,next.joinToString("|")).apply()
+}
 @Composable
 private fun NavigationPlanner(language:Int,sound:Boolean){
     var destination by rememberSaveable{mutableStateOf("")}
     var loading by remember{mutableStateOf(false)}
     var route by remember{mutableStateOf<RouteResult?>(null)}
     var error by remember{mutableStateOf("")}
+    val context=LocalContext.current
+    var history by remember{mutableStateOf(loadSearchHistory(context))}
     val scope=rememberCoroutineScope()
     Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
         Column(Modifier.padding(15.dp)){
@@ -706,13 +766,19 @@ private fun NavigationPlanner(language:Int,sound:Boolean){
             Text("точка назначения • маршрут • манёвры",color=MUTED,fontSize=10.sp)
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(value=destination,onValueChange={destination=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Куда едем?")},placeholder={Text("Например: аэропорт Грозного")})
-            Spacer(Modifier.height(7.dp))
+            if(history.isNotEmpty()){
+                Text("ИСТОРИЯ ПОИСКА",fontWeight=FontWeight.Black,fontSize=9.sp,color=MUTED)
+                Spacer(Modifier.height(5.dp));LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){itemsIndexed(history){_,item->AssistChip(onClick={destination=item},label={Text(item,fontSize=9.sp)},leadingIcon={Icon(Icons.Default.History,null,Modifier.size(14.dp))})}}
+                Spacer(Modifier.height(7.dp))
+            }
             Button({
                 if(destination.isNotBlank()){
                     loading=true;error=""
                     scope.launch{
                         val result=withContext(Dispatchers.IO){buildRoute(destination)}
-                        route=result;loading=false;if(result==null)error="Маршрут не найден или нет сети."
+                        route=result;loading=false
+                        if(result==null)error="Маршрут не найден или нет сети."
+                        else{saveSearchHistory(context,destination);history=loadSearchHistory(context)}
                     }
                 }
             },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){
@@ -858,24 +924,27 @@ private fun CarVisual(car:Car,modifier:Modifier,accent:Color){
 
 @Composable
 private fun MediaScreen(sound:Boolean,season:Season){
-    var selected by rememberSaveable{mutableStateOf("")}
-    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->selected=uri?.toString().orEmpty()}
+    val context=LocalContext.current;var selected by rememberSaveable{mutableStateOf("")};var playing by rememberSaveable{mutableStateOf(false)}
+    var progress by remember{mutableFloatStateOf(0f)};var duration by remember{mutableIntStateOf(0)};var position by remember{mutableIntStateOf(0)};var player by remember{mutableStateOf<MediaPlayer?>(null)}
+    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->uri?.let{selected=it.toString();player?.release();player=runCatching{MediaPlayer.create(context,it)}.getOrNull();player?.let{p->duration=p.duration};playing=false;position=0;progress=0f}}
+    DisposableEffect(Unit){onDispose{player?.release()}}
+    LaunchedEffect(playing,player){while(playing&&player!=null){val p=player!!;position=p.currentPosition;duration=p.duration;progress=if(p.duration>0)p.currentPosition.toFloat()/p.duration else 0f;if(!p.isPlaying){playing=false;break};delay(250)}}
+    val bars=rememberInfiniteTransition(label="eq").animateFloat(0f,1f,infiniteRepeatable(tween(650),RepeatMode.Reverse),label="eq-flow")
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-        Text("MEDIA",fontSize=25.sp,fontWeight=FontWeight.Black)
-        Text("Локальная музыка • без обязательного интернета",color=MUTED,fontSize=12.sp)
-        Spacer(Modifier.height(12.dp))
-        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
-            Column(Modifier.padding(16.dp)){
-                Icon(Icons.Default.MusicNote,null,tint=season.accent,modifier=Modifier.size(34.dp))
-                Spacer(Modifier.height(8.dp));Text("Твоя музыка",fontSize=20.sp,fontWeight=FontWeight.Black)
-                Text(if(selected.isBlank())"Файл ещё не выбран" else "Трек выбран из памяти телефона",color=MUTED,fontSize=11.sp)
-                Spacer(Modifier.height(10.dp))
-                Button({picker.launch("audio/*")},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){Text("ВЫБРАТЬ АУДИО")}
-                if(selected.isNotBlank())OutlinedButton({
-                    if(sound)ToneGenerator(AudioManager.STREAM_MUSIC,70).apply{startTone(ToneGenerator.TONE_PROP_BEEP,150);release()}
-                },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){Text("ПРОВЕРИТЬ ЗВУК")}
+        Text("MEDIA",fontSize=25.sp,fontWeight=FontWeight.Black);Text("локальная музыка • визуальный эквалайзер • управление треком",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
+        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
+            Box(Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF080C11))){
+                Canvas(Modifier.fillMaxSize()){val base=size.height*.78f;for(i in 0 until 28){val h=(10f+((i*19)%55)*bars.value)*(if(playing)1f else .22f);drawRoundRect(season.accent.copy(alpha=.30f+.55f*(i%3)/3f),Offset(i*size.width/28f,base-h),androidx.compose.ui.geometry.Size(size.width/42f,h),cornerRadius=androidx.compose.ui.geometry.CornerRadius(7f,7f))};drawCircle(season.accent.copy(alpha=.09f),size.minDimension*.30f,Offset(size.width/2,base*.55f))}
+                Column(Modifier.align(Alignment.Center),horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.MusicNote,null,tint=season.accent,modifier=Modifier.size(48.dp));Text(if(playing)"PLAYING" else "READY",fontWeight=FontWeight.Black)}
             }
-        }
+            Spacer(Modifier.height(12.dp));Text(if(selected.isBlank())"Трек не выбран" else "Локальный трек",fontSize=18.sp,fontWeight=FontWeight.Black);Text(if(selected.isBlank())"Выбери аудиофайл из памяти телефона" else "Твоя музыка • без обязательного интернета",color=MUTED,fontSize=10.sp)
+            Spacer(Modifier.height(8.dp));Slider(value=progress,onValueChange={v->progress=v;player?.seekTo((v*duration).toInt());position=(v*duration).toInt()},enabled=player!=null)
+            Row(Modifier.fillMaxWidth()){Text("%02d:%02d".format(position/60000,(position/1000)%60),color=MUTED,fontSize=9.sp);Spacer(Modifier.weight(1f));Text("%02d:%02d".format(duration/60000,(duration/1000)%60),color=MUTED,fontSize=9.sp)}
+            Spacer(Modifier.height(6.dp));Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
+                OutlinedButton({picker.launch("audio/*")},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Icon(Icons.Default.FolderOpen,null);Spacer(Modifier.width(5.dp));Text("ВЫБРАТЬ")}
+                Button({player?.let{p->if(p.isPlaying){p.pause();playing=false}else{if(p.currentPosition>=p.duration-100)p.seekTo(0);p.start();playing=true}}},Modifier.weight(1f),enabled=player!=null,shape=RoundedCornerShape(14.dp)){Icon(if(playing)Icons.Default.Pause else Icons.Default.PlayArrow,null);Spacer(Modifier.width(5.dp));Text(if(playing)"ПАУЗА" else "ИГРАТЬ")}
+            }
+        }}
     }
 }
 
@@ -903,7 +972,7 @@ private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,langua
             }
         }
         Spacer(Modifier.height(8.dp));AssistantSettings(assistant,onAssistant)
-        Spacer(Modifier.height(8.dp));Text("Версия 1.3 • GPS speedometer",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(4.dp))
+        Spacer(Modifier.height(8.dp));Text("Версия 1.5 • Gena • Weather • Music",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(4.dp))
     }
 }
 
