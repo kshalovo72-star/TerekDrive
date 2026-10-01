@@ -1,10 +1,12 @@
 {
-  "version": 3,
-  "message": "Терек Драйв 1.2: новая иконка, сезоны, анимации и обновления.",
+  "version": 4,
+  "message": "Терек Драйв 1.3: новая GPS-приборка, живой спидометр и обновлённый гараж.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
   "offline_region": "Grozny",
   "seasonal_theme": true,
-  "update_notifications": true
+  "update_notifications": true,
+  "gps_speedometer": true,
+  "live_car_garage": true
 }
