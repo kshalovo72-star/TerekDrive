@@ -6,7 +6,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = URI("https://artifactory.2gis.dev/sdk-maven-release") }
     }
 }
 rootProject.name="TerekDrive"
