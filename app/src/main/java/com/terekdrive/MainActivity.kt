@@ -87,6 +87,7 @@ import java.net.URL
 import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.abs
 
 private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
 private const val RELEASES_URL = "https://github.com/kshalovo72-star/TerekDrive/releases"
@@ -596,6 +597,7 @@ private fun downloadOffline(context:Context,done:(String)->Unit){
 private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int,onOpenMap:()->Unit){
     var gauge by rememberSaveable{mutableIntStateOf(0)}
     var gpsSpeed by remember{mutableFloatStateOf(0f)}
+    var measuredSpeed by remember{mutableFloatStateOf(0f)}
     var lastFixMs by remember{mutableLongStateOf(0L)}
     var running by rememberSaveable{mutableStateOf(false)}
     var started by rememberSaveable{mutableLongStateOf(0L)}
@@ -616,7 +618,15 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
             override fun onLocationChanged(location:Location){
                 currentLat=location.latitude
                 currentLon=location.longitude
-                gpsSpeed=if(location.hasSpeed())(location.speed*3.6f).coerceIn(0f,380f) else 0f
+                val raw=if(location.hasSpeed() && location.speed.isFinite())(location.speed*3.6f).coerceIn(0f,380f) else 0f
+                measuredSpeed=raw
+                gpsSpeed=when{
+                    !location.hasSpeed()->0f
+                    raw<1.5f->0f
+                    abs(raw-gpsSpeed)>45f->gpsSpeed*0.35f+raw*0.65f
+                    raw>gpsSpeed->gpsSpeed*0.72f+raw*0.28f
+                    else->gpsSpeed*0.84f+raw*0.16f
+                }
                 lastFixMs=SystemClock.elapsedRealtime()
                 locationState=if(location.hasSpeed())"GPS • "+location.accuracy.toInt()+" м" else "GPS • позиция"
             }
@@ -633,6 +643,7 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
     LaunchedEffect(Unit){
         while(true){
             if(lastFixMs!=0L && SystemClock.elapsedRealtime()-lastFixMs>2200L){
+                measuredSpeed=0f
                 gpsSpeed=0f
                 locationState=if(gpsEnabled)"GPS • ожидание сигнала" else "GPS не подключён"
             }
@@ -644,7 +655,11 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
     }
 
     val target=gpsSpeed.coerceIn(0f,gauges[gauge].max.toFloat())
-    val speedDisplay by animateFloatAsState(targetValue=target,animationSpec=tween(if(target>gpsSpeed)240 else 160,easing=FastOutSlowInEasing),label="gps-speed")
+    val speedDisplay by animateFloatAsState(
+        targetValue=target,
+        animationSpec=tween(if(target>0.5f)130 else 220,easing=FastOutSlowInEasing),
+        label="gps-speed"
+    )
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
         Text("DRIVE LAB",fontSize=25.sp,fontWeight=FontWeight.Black)
@@ -652,7 +667,7 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
         Spacer(Modifier.height(7.dp))
         Row(verticalAlignment=Alignment.CenterVertically){
             Box(Modifier.size(9.dp).clip(RoundedCornerShape(9.dp)).background(if(gpsEnabled && lastFixMs!=0L)GREEN else RED))
-            Spacer(Modifier.width(7.dp));Text(locationState,color=MUTED,fontSize=10.sp)
+            Spacer(Modifier.width(7.dp));Text(locationState+" • "+if(measuredSpeed<1.5f)"0" else "%.1f".format(measuredSpeed)+" км/ч",color=MUTED,fontSize=10.sp)
         }
         Spacer(Modifier.height(7.dp))
         RoadAnimation(speedDisplay,animations,Modifier.fillMaxWidth().height(68.dp))
@@ -695,7 +710,17 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
 
 @Composable
 private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animations:Boolean){
-    val pulse by rememberInfiniteTransition(label="gauge-pulse").animateFloat(.92f,1.06f,infiniteRepeatable(tween(if(animations)900 else 1800),RepeatMode.Reverse),label="pulse")
+    val fraction=(speed/gauge.max).coerceIn(0f,1f)
+    val danger=(fraction-.58f).coerceIn(0f,1f)/.42f
+    val active=when{
+        fraction>=.86f->RED
+        fraction>=.72f->Color(0xFFFF6D00)
+        fraction>=.58f->Color(0xFFFFB000)
+        else->gauge.accent
+    }
+    val pulse by rememberInfiniteTransition(label="gauge-pulse").animateFloat(
+        .94f,1.08f,infiniteRepeatable(tween(if(animations)650 else 1800),RepeatMode.Reverse),label="pulse"
+    )
     Canvas(modifier){
         val center=Offset(size.width/2f,size.height/2f)
         val r=minOf(size.width,size.height)*.39f
@@ -703,20 +728,51 @@ private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animation
         drawCircle(Color(0xFF05080C),outer+7f,center)
         drawCircle(Color(0xFF0C1117),outer,center)
         drawCircle(Color(0xFF151B22),r,center)
-        drawCircle(Brush.radialGradient(listOf(gauge.accent.copy(alpha=.20f*pulse),Color.Transparent)),r+10f,center)
-        drawCircle(Color(0xFF070A0E),r*.49f,center)
-        drawArc(gauge.secondary.copy(alpha=.55f),135f,270f,false,style=Stroke(width=20f))
-        drawArc(gauge.accent,135f,270f,false,style=Stroke(width=5f))
+
+        if(danger>0f){
+            val glow=active.copy(alpha=(.08f+.15f*danger)*(if(animations)pulse else 1f))
+            drawCircle(glow,r+16f+danger*7f,center)
+            drawCircle(active.copy(alpha=.05f+.08f*danger),r+28f*danger,center)
+        }else{
+            drawCircle(gauge.accent.copy(alpha=.16f),r+10f,center)
+        }
+
+        // Базовая шкала и активная зона. Чем выше реальная GPS-скорость, тем больше красного.
+        drawArc(Color(0xFF29313A),135f,270f,false,style=Stroke(width=20f))
         for(i in 0..60){
-            val fraction=i/60f
-            val angle=Math.toRadians(135.0+270.0*fraction)
+            val f=i/60f
+            val angle=Math.toRadians(135.0+270.0*f)
             val major=i%5==0
-            val r1=r-8f;val r2=r-if(major)29f else 18f
-            drawLine(gauge.accent.copy(alpha=if(major).95f else .55f),
+            val tickColor=when{
+                f<=fraction -> if(f>.72f)RED else if(f>.58f)Color(0xFFFFB000) else gauge.accent
+                f>.86f -> RED.copy(alpha=.42f)
+                else -> gauge.accent.copy(alpha=.38f)
+            }
+            val r1=r-8f
+            val r2=r-if(major)29f else 18f
+            drawLine(
+                tickColor.copy(alpha=if(f<=fraction).95f else tickColor.alpha),
                 Offset(center.x+cos(angle).toFloat()*r1,center.y+sin(angle).toFloat()*r1),
                 Offset(center.x+cos(angle).toFloat()*r2,center.y+sin(angle).toFloat()*r2),
-                if(major)4.2f else 1.8f)
+                if(major)4.2f else 1.8f
+            )
         }
+
+        // Активная дуга имеет физический смысл: это доля текущей скорости от предела выбранной шкалы.
+        val segments=90
+        for(i in 0 until segments){
+            val sf=i/segments.toFloat()
+            if(sf<=fraction){
+                val col=when{
+                    sf>.86f->RED
+                    sf>.72f->Color(0xFFFF6D00)
+                    sf>.58f->Color(0xFFFFB000)
+                    else->gauge.accent
+                }
+                drawArc(col.copy(alpha=.96f),135f+270f*sf,270f/segments+.8f,false,style=Stroke(width=9f))
+            }
+        }
+
         val labelPaint=android.graphics.Paint().apply{isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=15f;typeface=android.graphics.Typeface.DEFAULT_BOLD}
         for(i in 0..6){
             val value=gauge.max*i/6
@@ -724,19 +780,41 @@ private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animation
             val rr=r-52f
             drawContext.canvas.nativeCanvas.drawText(value.toString(),center.x+cos(angle).toFloat()*rr,center.y+sin(angle).toFloat()*rr+5f,labelPaint)
         }
-        val fraction=(speed/gauge.max).coerceIn(0f,1f)
+
         val needleAngle=Math.toRadians(135.0+270.0*fraction)
         val needleLength=r*.73f
         val tip=Offset(center.x+cos(needleAngle).toFloat()*needleLength,center.y+sin(needleAngle).toFloat()*needleLength)
-        drawLine(gauge.accent.copy(alpha=.22f),center,tip,13f,StrokeCap.Round)
-        drawLine(gauge.accent,center,tip,5.5f,StrokeCap.Round)
-        drawCircle(gauge.accent,13f,center);drawCircle(Color(0xFF0B0F14),6f,center)
-        val speedPaint=android.graphics.Paint().apply{isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=55f;typeface=android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD)}
+        drawLine(active.copy(alpha=.18f+.20f*danger),center,tip,14f+(danger*7f),StrokeCap.Round)
+        drawLine(active,center,tip,5.5f+(danger*2f),StrokeCap.Round)
+        drawCircle(active,13f+(danger*2f),center)
+        drawCircle(Color(0xFF0B0F14),6f,center)
+
+        val speedPaint=android.graphics.Paint().apply{
+            isAntiAlias=true;color=if(danger>.72f)active.toArgb() else Color.White.toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=55f
+            typeface=android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD)
+        }
         drawContext.canvas.nativeCanvas.drawText("%.0f".format(speed),center.x,center.y+20f,speedPaint)
-        val unitPaint=android.graphics.Paint().apply{isAntiAlias=true;color=gauge.accent.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=15f;typeface=android.graphics.Typeface.DEFAULT_BOLD}
+
+        val unitPaint=android.graphics.Paint().apply{isAntiAlias=true;color=active.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=15f;typeface=android.graphics.Typeface.DEFAULT_BOLD}
         drawContext.canvas.nativeCanvas.drawText("km/h • GPS",center.x,center.y+43f,unitPaint)
-        val statusPaint=android.graphics.Paint().apply{isAntiAlias=true;color=Color(0xFF8995A3).toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=10f}
-        drawContext.canvas.nativeCanvas.drawText(if(speed<1f)"СТОИТ • 0 КМ/Ч" else "LIVE • GPS SPEED",center.x,center.y+r*.62f,statusPaint)
+
+        val statusPaint=android.graphics.Paint().apply{
+            isAntiAlias=true;color=if(danger>.72f)active.toArgb() else Color(0xFF8995A3).toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=10f
+        }
+        val status=when{
+            speed<1f->"СТОИМ • GPS = 0 КМ/Ч"
+            danger>.86f->"ВЫСОКАЯ СКОРОСТЬ • LIVE GPS"
+            danger>.55f->"РАЗГОН • LIVE GPS"
+            else->"LIVE • GPS SPEED"
+        }
+        drawContext.canvas.nativeCanvas.drawText(status,center.x,center.y+r*.62f,statusPaint)
+
+        if(danger>.78f && animations){
+            val flash=(pulse-.94f)/.14f
+            drawCircle(RED.copy(alpha=.05f+.08f*flash),outer+4f,center)
+        }
     }
 }
 
