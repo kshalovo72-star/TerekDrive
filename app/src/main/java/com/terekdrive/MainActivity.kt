@@ -1,8 +1,20 @@
 package com.terekdrive
 
+import android.Manifest
+import android.content.Intent
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.media.MediaPlayer
+import android.media.ToneGenerator
+import android.media.AudioManager
+import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -11,7 +23,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -22,14 +36,33 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.offline.OfflineManager
+import org.maplibre.android.offline.OfflineRegion
+import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.math.cos
 import kotlin.math.sin
 
+private const val STYLE_URL="https://tiles.openfreemap.org/styles/liberty"
+private const val RELEASES_URL="https://github.com/kshalovo72-star/TerekDrive/releases"
+private const val REMOTE_CONFIG_URL="https://raw.githubusercontent.com/kshalovo72-star/TerekDrive/main/remote-config.json"
 private val BG=Color(0xFF07090C); private val PANEL=Color(0xFF10151B)
-private val RED=Color(0xFFFF3B30); private val CYAN=Color(0xFF00D9FF); private val MUTED=Color(0xFF8995A3)
+private val RED=Color(0xFFFF3B30); private val CYAN=Color(0xFF00D9FF)
+private val GREEN=Color(0xFF00E5A0); private val MUTED=Color(0xFF8995A3)
+
 private data class Car(val name:String,val type:String,val hp:Int,val top:Int)
 private data class Gauge(val name:String,val color:Color,val max:Int)
 private val cars=listOf(
@@ -39,43 +72,168 @@ private val cars=listOf(
 private val gauges=listOf(
  Gauge("Классика",RED,300),Gauge("Спорт",Color(0xFFFF1744),320),Gauge("Будущее",CYAN,360),Gauge("Минимализм",Color.White,280),
  Gauge("Ночь",Color(0xFF4C9AFF),300),Gauge("Внедорожник",Color(0xFFFFB300),260),Gauge("Ретро",Color(0xFFE6D0A8),220),
- Gauge("Хром",Color(0xFFB8C2CC),300),Gauge("Неон",Color(0xFFB66CFF),340),Gauge("Матыч",Color(0xFF00FFA3),320))
+ Gauge("Хром",Color(0xFFB8C2CC),300),Gauge("Неон",Color(0xFFB66CFF),340),Gauge("Матыч",GREEN,320))
 
 class MainActivity:ComponentActivity(){
- override fun onCreate(b:Bundle?){super.onCreate(b);setContent{App()}}
+ override fun onCreate(state:Bundle?){super.onCreate(state);setContent{TerekDrive()}}
 }
-@Composable fun App(){
- var tab by remember{mutableIntStateOf(0)}; var car by remember{mutableIntStateOf(0)}; var gauge by remember{mutableIntStateOf(0)}; var nav by remember{mutableStateOf(false)}
+
+@Composable private fun TerekDrive(){
+ var tab by remember{mutableIntStateOf(0)}
+ var sound by remember{mutableStateOf(true)}
+ var animations by remember{mutableStateOf(true)}
  MaterialTheme(colorScheme=darkColorScheme(background=BG,surface=PANEL,primary=RED,onBackground=Color.White,onSurface=Color.White)){
-  Surface(Modifier.fillMaxSize(),color=BG){Column{Top();Box(Modifier.weight(1f)){when(tab){
-   0->Map(nav){nav=!nav};1->Gauges(gauge){gauge=it};2->Garage(car){car=it}}};Bottom(tab){tab=it}}}}
+  Surface(Modifier.fillMaxSize(),color=BG){Column{
+   Header(sound){sound=!sound}
+   Box(Modifier.weight(1f)){when(tab){
+    0->MapScreen();1->DriveScreen(sound);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,{sound=!sound},{animations=!animations})
+   }}
+   NavigationBar(containerColor=Color(0xFF090C10)){
+    val items=listOf(Icons.Default.Map to"Карта",Icons.Default.Speed to"Драйв",Icons.Default.DirectionsCar to"Гараж",Icons.Default.MusicNote to"Медиа",Icons.Default.Settings to"Настройки")
+    items.forEachIndexed{i,item->NavigationBarItem(tab==i,{tab=i},{Icon(item.first,null)},{Text(item.second,fontSize=9.sp)})}
+   }
+  }}
+ }
 }
-@Composable fun Top(){Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
- Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(RED),contentAlignment=Alignment.Center){Text("TD",fontWeight=FontWeight.Black)}
- Spacer(Modifier.width(12.dp));Column{Text("ТЕРЕК ДРАЙВ",fontWeight=FontWeight.Black,fontSize=19.sp,letterSpacing=1.3.sp);Text("ТВОЙ ПУТЬ. ТВОЙ РИТМ.",color=MUTED,fontSize=9.sp)}
- Spacer(Modifier.weight(1f));Icon(Icons.Default.Notifications,null)}} 
-@Composable fun Map(nav:Boolean,toggle:()->Unit){Box(Modifier.fillMaxSize().padding(10.dp).clip(RoundedCornerShape(24.dp))){
- MapDraw(nav,Modifier.fillMaxSize());Search();Column(Modifier.align(Alignment.CenterEnd).padding(10.dp)){listOf("+","−","⌾").forEach{Round(it)}}
- Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xF20B1015)).padding(16.dp)){
-  Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(if(nav)"12 мин • 4,8 км"else"Грозный → Центр",fontSize=18.sp,fontWeight=FontWeight.Bold);Text(if(nav)"Поворот через 1,2 км"else"Самый быстрый маршрут",color=MUTED,fontSize=12.sp)};Icon(Icons.Default.Navigation,null,tint=RED)}
-  Spacer(Modifier.height(10.dp));Button(toggle,Modifier.fillMaxWidth().height(52.dp),shape=RoundedCornerShape(16.dp),colors=ButtonDefaults.buttonColors(containerColor=if(nav)Color(0xFF292D32)else RED)){Text(if(nav)"ЗАВЕРШИТЬ"else"НАЧАТЬ НАВИГАЦИЮ",fontWeight=FontWeight.Black)}
- }}}
-@Composable fun Search(){Row(Modifier.fillMaxWidth(.88f).padding(top=12.dp).align(Alignment.TopCenter).clip(RoundedCornerShape(18.dp)).background(Color(0xEE151C24)).padding(14.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Search,null,tint=MUTED);Spacer(Modifier.width(10.dp));Text("Куда едем?",color=MUTED);Spacer(Modifier.weight(1f));Icon(Icons.Default.Mic,null,tint=CYAN)}}
-@Composable fun Round(s:String){Box(Modifier.size(44.dp).padding(3.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xEE151C24)),contentAlignment=Alignment.Center){Text(s,fontSize=22.sp,fontWeight=FontWeight.Bold)}}
-@Composable fun MapDraw(nav:Boolean,m:Modifier){val pulse by rememberInfiniteTransition(label="p").animateFloat(.7f,1.2f,infiniteRepeatable(tween(900),RepeatMode.Reverse),label="p");Canvas(m.background(Color(0xFF0D151A))){
- val w=size.width;val h=size.height;for(i in 0..9)drawLine(Color(0xFF1B2A2D),Offset(0f,h*i/10f),Offset(w,h*i/10f+h*.08f),1.5f)
- val p=Path().apply{moveTo(w*.08f,h*.78f);cubicTo(w*.28f,h*.62f,w*.26f,h*.52f,w*.43f,h*.49f);cubicTo(w*.61f,h*.45f,w*.59f,h*.32f,w*.86f,h*.18f)}
- drawPath(p,Color(0x5529B6F6),Stroke(18f,cap=StrokeCap.Round));drawPath(p,Color(0xFF1696FF),Stroke(7f,cap=StrokeCap.Round))
- val c=Offset(w*.43f,h*.49f);drawCircle(CYAN.copy(alpha=.18f),42f*pulse,c);drawCircle(CYAN,9f,c);drawCircle(Color.White,4f,c)
- if(nav){val e=Offset(w*.86f,h*.18f);drawCircle(RED,13f,e);drawCircle(Color.White,5f,e)}
-}}
-@Composable fun Gauges(sel:Int,pick:(Int)->Unit){Column(Modifier.fillMaxSize().padding(14.dp)){Text("10 СПИДОМЕТРОВ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("Эффект, подсветка и живая стрелка",color=MUTED,fontSize=12.sp);Speed(gauges[sel],Modifier.fillMaxWidth().height(310.dp));Text("ТЕМЫ",fontWeight=FontWeight.Bold,color=MUTED,fontSize=12.sp);LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(gauges){i,g->Column(Modifier.width(92.dp).clickable{pick(i)}){Speed(g,Modifier.height(92.dp).fillMaxWidth(),true,i*17+62);Text((i+1).toString()+". "+g.name,fontSize=10.sp)}}}}}
-@Composable fun Speed(g:Gauge,m:Modifier,compact:Boolean=false,demo:Int=120){val tr=rememberInfiniteTransition(label="needle");val f by tr.animateFloat(0f,1f,infiniteRepeatable(tween(1700,easing=FastOutSlowInEasing),RepeatMode.Reverse),label="needle");val speed=if(compact)demo else(60+f*140).toInt();Canvas(m){
- val c=Offset(size.width/2,size.height/2);val r=minOf(size.width,size.height)*.39f;drawCircle(Color(0xFF0A0D11),r+16,c);drawCircle(Color(0xFF151A20),r,c)
- drawArc(g.color.copy(alpha=.18f),135f,270f,false,style=Stroke(24f));drawArc(g.color,135f,270f*speed/g.max,false,style=Stroke(10f))
- for(i in 0..30){val a=Math.toRadians((135+i*9).toDouble());val r1=r-5;val r2=r-(if(i%5==0)20 else 12);drawLine(g.color.copy(alpha=.7f),Offset(c.x+cos(a).toFloat()*r1,c.y+sin(a).toFloat()*r1),Offset(c.x+cos(a).toFloat()*r2,c.y+sin(a).toFloat()*r2),if(i%5==0)4f else 2f)}
- val a=Math.toRadians(135.0+270.0*speed/g.max);val n=Offset(c.x+cos(a).toFloat()*r*.75f,c.y+sin(a).toFloat()*r*.75f);drawLine(g.color,c,n,if(compact)3f else 7f,StrokeCap.Round);drawCircle(g.color,10f,c)
- if(!compact){drawContext.canvas.nativeCanvas.drawText(speed.toString(),c.x-58,c.y+25,android.graphics.Paint().apply{color=android.graphics.Color.WHITE;textSize=68f;typeface=android.graphics.Typeface.DEFAULT_BOLD})}
-}}
-@Composable fun Garage(sel:Int,pick:(Int)->Unit){Column(Modifier.fillMaxSize().padding(14.dp)){Text("МОЙ ГАРАЖ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 машин • выбирай свою",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp));LazyRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){itemsIndexed(cars){i,c->Column(Modifier.width(150.dp).clip(RoundedCornerShape(20.dp)).background(if(i==sel)Color(0xFF211317)else PANEL).border(if(i==sel)2.dp else 1.dp,if(i==sel)RED else Color(0xFF252C34),RoundedCornerShape(20.dp)).clickable{pick(i)}.padding(12.dp)){Box(Modifier.fillMaxWidth().height(88.dp).background(Color(0xFF0A0E12)),contentAlignment=Alignment.Center){Text("🚘",fontSize=52.sp)};Spacer(Modifier.height(8.dp));Text(c.name,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(c.hp.toString()+" л.с.",color=MUTED,fontSize=11.sp)}}};Spacer(Modifier.height(20.dp));val c=cars[sel];Text(c.name,fontSize=27.sp,fontWeight=FontWeight.Black);Text(c.type+" • "+c.hp+" л.с. • "+c.top+" км/ч",color=MUTED);Spacer(Modifier.height(18.dp));Button({},Modifier.fillMaxWidth().height(54.dp),shape=RoundedCornerShape(16.dp),colors=ButtonDefaults.buttonColors(containerColor=RED)){Icon(Icons.Default.DirectionsCar,null);Spacer(Modifier.width(8.dp));Text("ВЫБРАТЬ АВТО",fontWeight=FontWeight.Black)}}}
-@Composable fun Bottom(sel:Int,pick:(Int)->Unit){NavigationBar(containerColor=Color(0xFF090C10)){listOf(Icons.Default.Map to"Карта",Icons.Default.Speed to"Спидометр",Icons.Default.DirectionsCar to"Гараж").forEachIndexed{i,p->NavigationBarItem(sel==i,{pick(i)},{Icon(p.first,null)},{Text(p.second,fontSize=10.sp)})}}}
+
+@Composable private fun Header(sound:Boolean,onSound:()->Unit){
+ Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
+  Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(RED),contentAlignment=Alignment.Center){Text("TD",fontWeight=FontWeight.Black,fontSize=16.sp)}
+  Spacer(Modifier.width(12.dp));Column{Text("ТЕРЕК ДРАЙВ",fontWeight=FontWeight.Black,fontSize=19.sp,letterSpacing=1.3.sp);Text("MAP • DRIVE • MUSIC",color=MUTED,fontSize=9.sp,letterSpacing=1.sp)}
+  Spacer(Modifier.weight(1f));IconButton(onClick=onSound){Icon(if(sound)Icons.Default.VolumeUp else Icons.Default.VolumeOff,null,tint=if(sound)Color.White else MUTED)}
+ }
+}
+
+@Composable private fun MapScreen(){
+ var status by remember{mutableStateOf("Онлайн-карта готова")}
+ val context=LocalContext.current
+ Box(Modifier.fillMaxSize().padding(10.dp).clip(RoundedCornerShape(24.dp))){
+  AndroidView(Modifier.fillMaxSize(),factory={ctx->
+   MapView(ctx).also{v->v.onCreate(null);v.onStart();v.onResume();v.getMapAsync{map->
+    map.setStyle(STYLE_URL);map.cameraPosition=CameraPosition.Builder().target(LatLng(43.3178,45.6985)).zoom(11.0).build()
+   }}
+  })
+  Column(Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter)){
+   Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xEE111820)).padding(12.dp),verticalAlignment=Alignment.CenterVertically){
+    Icon(Icons.Default.Map,null,tint=CYAN);Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text("MAPLIBRE • OPENFREEMAP",fontWeight=FontWeight.Black,fontSize=12.sp);Text(status,color=MUTED,fontSize=10.sp)};Text("OFFLINE",color=GREEN,fontWeight=FontWeight.Black,fontSize=10.sp)
+   }
+   Spacer(Modifier.height(8.dp))
+   Button({status="Скачивание офлайн-карты…";downloadOffline(context){status=it}},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp),colors=ButtonDefaults.buttonColors(containerColor=Color(0xEE18242B))){
+    Icon(Icons.Default.Download,null);Spacer(Modifier.width(8.dp));Text("СКАЧАТЬ ГРОЗНЫЙ ДЛЯ OFFLINE")
+   }
+  }
+  Row(Modifier.align(Alignment.BottomCenter).padding(14.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xF20B1015)).padding(16.dp),verticalAlignment=Alignment.CenterVertically){
+   Column(Modifier.weight(1f)){Text("OpenStreetMap + OpenFreeMap",fontWeight=FontWeight.Bold);Text("Без 2ГИС-ключа • офлайн-пакет хранится на телефоне",color=MUTED,fontSize=11.sp)};Icon(Icons.Default.WifiOff,null,tint=GREEN)
+  }
+ }
+}
+
+private fun downloadOffline(context:android.content.Context,done:(String)->Unit){
+ val bounds=LatLngBounds.from(43.55,45.90,43.10,45.45)
+ val definition=OfflineTilePyramidRegionDefinition(STYLE_URL,bounds,8.0,14.0,1f)
+ OfflineManager.getInstance(context).createOfflineRegion(definition,"TerekDrive-Grozny".toByteArray(),object:OfflineManager.CreateOfflineRegionCallback{
+  override fun onCreate(region:OfflineRegion){region.setDownloadState(OfflineRegion.STATE_ACTIVE);done("Офлайн-загрузка запущена")}
+  override fun onError(error:String){done("Ошибка: $error")}
+ })
+}
+
+@Composable private fun DriveScreen(sound:Boolean){
+ var gauge by remember{mutableIntStateOf(0)};var speed by remember{mutableIntStateOf(0)}
+ var running by remember{mutableStateOf(false)};var started by remember{mutableLongStateOf(0L)};var elapsed by remember{mutableLongStateOf(0L)}
+ val context=LocalContext.current
+ val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){}
+ DisposableEffect(Unit){
+  val lm=context.getSystemService(LocationManager::class.java)
+  val listener=object:LocationListener{override fun onLocationChanged(location:Location){speed=(location.speed*3.6f).toInt().coerceAtLeast(0)}}
+  if(context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED)runCatching{lm.requestLocationUpdates(LocationManager.GPS_PROVIDER,500L,1f,listener)}
+  onDispose{runCatching{lm.removeUpdates(listener)}}
+ }
+ LaunchedEffect(running){while(running){elapsed=SystemClock.elapsedRealtime()-started;kotlinx.coroutines.delay(50)}}
+ Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+  Text("DRIVE LAB",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 тем • GPS скорость • секундомер",color=MUTED,fontSize=12.sp)
+  Spacer(Modifier.height(8.dp));SpeedGauge(gauges[gauge],speed.coerceIn(0,gauges[gauge].max),Modifier.fillMaxWidth().height(280.dp))
+  LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(gauges){i,g->Box(Modifier.width(100.dp).clip(RoundedCornerShape(14.dp)).background(if(i==gauge)g.color.copy(alpha=.18f)else PANEL).clickable{gauge=i}.padding(10.dp)){Text((i+1).toString()+". "+g.name,fontSize=10.sp,fontWeight=FontWeight.Bold)}}}
+  Spacer(Modifier.height(12.dp));Row(horizontalArrangement=Arrangement.spacedBy(10.dp),modifier=Modifier.fillMaxWidth()){
+   Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){Column(Modifier.padding(16.dp)){Text(speed.toString(),fontSize=34.sp,fontWeight=FontWeight.Black,color=CYAN);Text("км/ч • GPS",color=MUTED,fontSize=11.sp)}}
+   Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){Column(Modifier.padding(16.dp)){val sec=elapsed/1000;Text(String.format("%02d:%02d.%02d",sec/60,sec%60,(elapsed%1000)/10),fontSize=24.sp,fontWeight=FontWeight.Black,color=GREEN);Text("секундомер",color=MUTED,fontSize=11.sp)}}
+  }
+  Spacer(Modifier.height(10.dp));Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
+   Button({if(!running)started=SystemClock.elapsedRealtime()-elapsed;running=!running},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text(if(running)"ПАУЗА" else "СТАРТ")}
+   OutlinedButton({running=false;elapsed=0},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text("СБРОС")}
+  }
+  Spacer(Modifier.height(8.dp));Button({permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text("ВКЛЮЧИТЬ GPS-СКОРОСТЬ")}
+  Text(if(sound)"🔊 сигналы включены" else "🔇 сигналы выключены",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(top=6.dp))
+ }
+}
+
+@Composable private fun SpeedGauge(g:Gauge,speed:Int,m:Modifier){
+ val pulse by rememberInfiniteTransition(label="g").animateFloat(.85f,1.08f,infiniteRepeatable(tween(900),RepeatMode.Reverse),label="pulse")
+ Canvas(m){
+  val c=Offset(size.width/2,size.height/2);val r=minOf(size.width,size.height)*.36f
+  drawCircle(Color(0xFF0A0D11),r+20,c);drawCircle(Color(0xFF151A20),r,c);drawCircle(g.color.copy(alpha=.08f*pulse),r+12,c)
+  drawArc(g.color.copy(alpha=.18f),135f,270f,false,style=Stroke(22f));drawArc(g.color,135f,270f*speed/g.max,false,style=Stroke(9f))
+  for(i in 0..30){val a=Math.toRadians((135+i*9).toDouble());val r1=r-5;val r2=r-(if(i%5==0)19 else 11);drawLine(g.color.copy(alpha=.7f),Offset(c.x+cos(a).toFloat()*r1,c.y+sin(a).toFloat()*r1),Offset(c.x+cos(a).toFloat()*r2,c.y+sin(a).toFloat()*r2),if(i%5==0)4f else 2f)}
+  val a=Math.toRadians(135.0+270.0*speed/g.max);val n=Offset(c.x+cos(a).toFloat()*r*.76f,c.y+sin(a).toFloat()*r*.76f);drawLine(g.color,c,n,7f,StrokeCap.Round);drawCircle(g.color,10f,c)
+  drawContext.canvas.nativeCanvas.drawText(speed.toString(),c.x-45,c.y+25,android.graphics.Paint().apply{color=android.graphics.Color.WHITE;textSize=54f;typeface=android.graphics.Typeface.DEFAULT_BOLD})
+ }
+}
+
+@Composable private fun GarageScreen(){
+ var selected by remember{mutableIntStateOf(0)};val car=cars[selected]
+ Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+  Text("МОЙ ГАРАЖ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 машин • живой выбор",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
+  LazyRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){itemsIndexed(cars){i,c->Column(Modifier.width(150.dp).clip(RoundedCornerShape(20.dp)).background(if(i==selected)Color(0xFF211317)else PANEL).border(1.dp,if(i==selected)RED else Color(0xFF252C34),RoundedCornerShape(20.dp)).clickable{selected=i}.padding(12.dp)){
+   Box(Modifier.fillMaxWidth().height(88.dp).background(Color(0xFF0A0E12)),contentAlignment=Alignment.Center){Text("🚘",fontSize=52.sp)};Spacer(Modifier.height(8.dp));Text(c.name,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(c.hp.toString()+" л.с. • "+c.top+" км/ч",color=MUTED,fontSize=10.sp)
+  }}}
+  Spacer(Modifier.height(18.dp));Text(car.name,fontSize=28.sp,fontWeight=FontWeight.Black);Text(car.type+" • "+car.hp+" л.с. • "+car.top+" км/ч",color=MUTED)
+ }
+}
+
+@Composable private fun MediaScreen(sound:Boolean){
+ var player by remember{mutableStateOf<MediaPlayer?>(null)};var title by remember{mutableStateOf("Музыка не выбрана")}
+ var weather by remember{mutableStateOf("Нажми «Обновить»")};var loading by remember{mutableStateOf(false)}
+ val context=LocalContext.current
+ val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri:Uri?->uri?.let{player?.release();player=MediaPlayer.create(context,it);title=it.lastPathSegment?:"Трек";if(sound)ToneGenerator(AudioManager.STREAM_NOTIFICATION,80).startTone(ToneGenerator.TONE_PROP_BEEP,120)}}
+ DisposableEffect(Unit){onDispose{player?.release()}}
+ LaunchedEffect(loading){if(loading){weather=withContext(Dispatchers.IO){runCatching{
+  val c=URL("https://api.open-meteo.com/v1/forecast?latitude=43.3178&longitude=45.6985&current=temperature_2m,wind_speed_10m,weather_code&timezone=auto").openConnection() as HttpURLConnection
+  c.connectTimeout=7000;c.readTimeout=7000;val body=c.inputStream.bufferedReader().use{it.readText()};c.disconnect()
+  val temp=Regex("\\"temperature_2m\\"\\s*:\\s*(-?[0-9.]+)").find(body)?.groupValues?.get(1)?:"?"
+  val wind=Regex("\\"wind_speed_10m\\"\\s*:\\s*([0-9.]+)").find(body)?.groupValues?.get(1)?:"?"
+  "Грозный • "+temp+"°C • ветер "+wind+" км/ч"
+ }.getOrElse{"Погода пока недоступна"}};loading=false}}
+ Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+  Text("МЕДИА",fontSize=25.sp,fontWeight=FontWeight.Black);Text("музыка • погода • таймеры",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
+  Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
+   Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.MusicNote,null,tint=RED);Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text("ПЛЕЕР",fontWeight=FontWeight.Black);Text(title,color=MUTED,fontSize=11.sp)};IconButton({player?.let{if(it.isPlaying)it.pause() else it.start()}}){Icon(Icons.Default.PlayArrow,null)}}
+   Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({picker.launch("audio/*")}){Icon(Icons.Default.LibraryMusic,null);Spacer(Modifier.width(6.dp));Text("ВЫБРАТЬ ТРЕК")};OutlinedButton({player?.seekTo(0);player?.pause()}){Text("СТОП")}}
+  }}
+  Spacer(Modifier.height(10.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically){
+   Icon(Icons.Default.Cloud,null,tint=CYAN);Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text("ПОГОДА • ГРОЗНЫЙ",fontWeight=FontWeight.Black);Text(weather,color=MUTED,fontSize=11.sp)};IconButton({loading=true}){Icon(Icons.Default.Refresh,null)}
+  }}
+  Spacer(Modifier.height(10.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){Text("ЗВУК",fontWeight=FontWeight.Black);Text(if(sound)"Системные сигналы включены" else "Звук выключен",color=MUTED,fontSize=11.sp)}}
+ }
+}
+
+@Composable private fun SettingsScreen(sound:Boolean,animations:Boolean,toggleSound:()->Unit,toggleAnimations:()->Unit){
+ var remote by remember{mutableStateOf("Проверить удалённую конфигурацию")};val context=LocalContext.current
+ Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+  Text("НАСТРОЙКИ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("всё под контролем",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
+  SettingRow("🔊","Звук","Сигналы, подсказки и клики",sound,toggleSound);SettingRow("✨","Анимации","Пульсация, стрелки, переходы",animations,toggleAnimations)
+  Spacer(Modifier.height(8.dp));Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){
+   Text("ДИСТАНЦИОННЫЕ ОБНОВЛЕНИЯ",fontWeight=FontWeight.Black);Text(remote,color=MUTED,fontSize=11.sp);Spacer(Modifier.height(8.dp))
+   Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({remote="Проверяю…";Thread{remote=checkRemote()}.start()}){Icon(Icons.Default.CloudDownload,null);Spacer(Modifier.width(6.dp));Text("ПРОВЕРИТЬ")};OutlinedButton({context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL)))}){Text("РЕЛИЗЫ")}}
+  }}
+  Spacer(Modifier.height(8.dp));Text("Контент и конфиг можно менять удалённо без пересборки APK. Для новой версии кода GitHub Actions автоматически собирает APK.",color=MUTED,fontSize=10.sp)
+ }
+}
+
+@Composable private fun SettingRow(icon:String,title:String,subtitle:String,value:Boolean,onChange:()->Unit){
+ Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth().padding(bottom=8.dp)){Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically){
+  Text(icon,fontSize=22.sp);Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(title,fontWeight=FontWeight.Bold);Text(subtitle,color=MUTED,fontSize=10.sp)};Switch(value,onChange)
+ }}
+}
+
+private fun checkRemote():String{
+ return runCatching{val c=URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection;c.connectTimeout=5000;c.readTimeout=5000;val body=c.inputStream.bufferedReader().use{it.readText()};c.disconnect();Regex("\\"message\\"\\s*:\\s*\\"([^\\"]+)\\"").find(body)?.groupValues?.get(1)?:"Конфигурация обновлена"}.getOrElse{"Нет сети — локальные настройки сохранены"}
+}
