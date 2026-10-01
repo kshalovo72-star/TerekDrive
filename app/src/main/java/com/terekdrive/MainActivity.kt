@@ -108,7 +108,7 @@ class MainActivity:ComponentActivity(){
     val items=listOf(Icons.Default.Map to "Карта",Icons.Default.Speed to "Драйв",Icons.Default.DirectionsCar to "Гараж",Icons.Default.MusicNote to "Медиа",Icons.Default.Settings to "Настройки")
     items.forEachIndexed { i,item -> NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.first,null)},label={Text(item.second,fontSize=9.sp)}) }
    }
-  }}
+   }})
  }
  }
 }
