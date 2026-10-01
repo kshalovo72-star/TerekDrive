@@ -1,8 +1,10 @@
 {
-  "version": 1,
-  "message": "Терек Драйв: удалённая конфигурация активна.",
+  "version": 3,
+  "message": "Терек Драйв 1.2: новая иконка, сезоны, анимации и обновления.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
-  "offline_region": "Grozny"
+  "offline_region": "Grozny",
+  "seasonal_theme": true,
+  "update_notifications": true
 }
