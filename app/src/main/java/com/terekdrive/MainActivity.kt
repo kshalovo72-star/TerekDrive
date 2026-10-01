@@ -281,10 +281,13 @@ private fun GenaQuickCall(
     }
     val speak: (String)->Unit = {text->
         if(sound){
-            val tts=TextToSpeech(context){status->
+            var engine:TextToSpeech?=null
+            engine=TextToSpeech(context){status->
                 if(status==TextToSpeech.SUCCESS){
-                    applyVoice(tts,gena,language)
-                    tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"gena_reply")
+                    engine?.let{
+                        applyVoice(it,gena,language)
+                        it.speak(text,TextToSpeech.QUEUE_FLUSH,null,"gena_reply")
+                    }
                 }
             }
         }
