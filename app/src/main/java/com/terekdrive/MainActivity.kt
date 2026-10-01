@@ -1,29 +1,39 @@
 package com.terekdrive
 
 import android.Manifest
-import android.content.Intent
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.media.MediaPlayer
-import android.media.ToneGenerator
 import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
-import android.content.pm.ActivityInfo
-import java.util.Locale
 import android.os.SystemClock
+import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,18 +54,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.json.JSONObject
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
@@ -66,245 +81,675 @@ import org.maplibre.android.offline.OfflineRegion
 import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
-import kotlin.random.Random
 
-private const val STYLE_URL="https://tiles.openfreemap.org/styles/liberty"
-private const val RELEASES_URL="https://github.com/kshalovo72-star/TerekDrive/releases"
-private const val REMOTE_CONFIG_URL="https://raw.githubusercontent.com/kshalovo72-star/TerekDrive/main/remote-config.json"
-private val BG=Color(0xFF07090C); private val PANEL=Color(0xFF10151B)
-private val RED=Color(0xFFFF3B30); private val CYAN=Color(0xFF00D9FF)
-private val GREEN=Color(0xFF00E5A0); private val MUTED=Color(0xFF8995A3)
-private enum class Season(val title:String,val emoji:String,val accent:Color,val bg:Color){SPRING("ВЕСНА","🌱",Color(0xFF55D66A),Color(0xFF07120C)),SUMMER("ЛЕТО","☀️",Color(0xFFFFB300),Color(0xFF111006)),AUTUMN("ОСЕНЬ","🍂",Color(0xFFFF7043),Color(0xFF160B07)),WINTER("ЗИМА","❄️",Color(0xFF64D8FF),Color(0xFF071016))}
-private fun currentSeason():Season=when(java.time.LocalDate.now().monthValue){3,4,5->Season.SPRING;6,7,8->Season.SUMMER;9,10,11->Season.AUTUMN;else->Season.WINTER}
+private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
+private const val RELEASES_URL = "https://github.com/kshalovo72-star/TerekDrive/releases"
+private const val REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/kshalovo72-star/TerekDrive/main/remote-config.json"
+private const val PREFS = "terek_drive"
+private const val PREF_LAST_UPDATE = "last_notified_update"
+
+private val BG = Color(0xFF07090C)
+private val PANEL = Color(0xFF10151B)
+private val RED = Color(0xFFFF3B30)
+private val CYAN = Color(0xFF00D9FF)
+private val GREEN = Color(0xFF00E5A0)
+private val MUTED = Color(0xFF8995A3)
+
+private enum class Season(val title:String,val emoji:String,val accent:Color,val bg:Color) {
+    SPRING("ВЕСНА","🌱",Color(0xFF55D66A),Color(0xFF07120C)),
+    SUMMER("ЛЕТО","☀️",Color(0xFFFFB300),Color(0xFF111006)),
+    AUTUMN("ОСЕНЬ","🍂",Color(0xFFFF7043),Color(0xFF160B07)),
+    WINTER("ЗИМА","❄️",Color(0xFF64D8FF),Color(0xFF071016))
+}
+private fun currentSeason():Season=when(java.time.LocalDate.now().monthValue){
+    3,4,5->Season.SPRING;6,7,8->Season.SUMMER;9,10,11->Season.AUTUMN;else->Season.WINTER
+}
+
 private data class Language(val name:String,val tag:String)
-private val languages=listOf(Language("Русский","ru"),Language("English","en"),Language("Deutsch","de"),Language("Français","fr"),Language("Español","es"))
+private val languages=listOf(
+    Language("Русский","ru"),Language("English","en"),Language("Deutsch","de"),
+    Language("Français","fr"),Language("Español","es")
+)
 private data class Assistant(val name:String,val pitch:Float,val rate:Float)
 private val gena=Assistant("Гена",0.96f,1.02f)
 
-private data class Car(val name:String,val type:String,val hp:Int,val top:Int)
-private data class Gauge(val name:String,val color:Color,val max:Int)
+private data class Car(
+    val name:String,val type:String,val hp:Int,val top:Int,val torque:Int,val drive:String,val weight:Int
+)
 private val cars=listOf(
- Car("BMW M5","SPORT",730,305),Car("Mercedes G63","SUV",585,240),Car("Audi RS7","SPORT",600,305),
- Car("Toyota Supra","SPORT",387,250),Car("Lamborghini Huracán","SUPER",640,325),Car("Porsche 911","SPORT",650,320),
- Car("Range Rover SVR","SUV",575,283),Car("Ford Mustang","MUSCLE",480,290),Car("Lexus LX 570","SUV",383,220),Car("Nissan GT-R","SUPER",565,315))
+    Car("BMW M5","SPORT",730,305,1000,"xDrive",1970),
+    Car("Mercedes G63","SUV",585,240,850,"4MATIC",2485),
+    Car("Audi RS7","SPORT",600,305,800,"quattro",2070),
+    Car("Toyota Supra","SPORT",387,250,500,"RWD",1570),
+    Car("Lamborghini Huracán","SUPER",640,325,600,"AWD",1422),
+    Car("Porsche 911","SPORT",650,320,800,"RWD",1590),
+    Car("Range Rover SVR","SUV",575,283,700,"AWD",2310),
+    Car("Ford Mustang","MUSCLE",480,290,570,"RWD",1810),
+    Car("Lexus LX 570","SUV",383,220,546,"4WD",2660),
+    Car("Nissan GT-R","SUPER",565,315,633,"AWD",1740)
+)
+private data class Gauge(val name:String,val accent:Color,val secondary:Color,val max:Int)
 private val gauges=listOf(
- Gauge("Классика",RED,300),Gauge("Спорт",Color(0xFFFF1744),320),Gauge("Будущее",CYAN,360),Gauge("Минимализм",Color.White,280),
- Gauge("Ночь",Color(0xFF4C9AFF),300),Gauge("Внедорожник",Color(0xFFFFB300),260),Gauge("Ретро",Color(0xFFE6D0A8),220),
- Gauge("Хром",Color(0xFFB8C2CC),300),Gauge("Неон",Color(0xFFB66CFF),340),Gauge("Матыч",GREEN,320))
+    Gauge("КЛАССИКА",RED,Color(0xFFFF8A80),300),
+    Gauge("СПОРТ",Color(0xFFFF1744),Color(0xFFFFB000),320),
+    Gauge("БУДУЩЕЕ",CYAN,Color(0xFF7C4DFF),360),
+    Gauge("ICE",Color(0xFFEAF6FF),Color(0xFF75BFFF),280),
+    Gauge("НОЧЬ",Color(0xFF4C9AFF),Color(0xFFB66CFF),300),
+    Gauge("OFFROAD",Color(0xFFFFB300),Color(0xFF66BB6A),260),
+    Gauge("РЕТРО",Color(0xFFE6D0A8),Color(0xFFFF7043),220),
+    Gauge("ХРОМ",Color(0xFFB8C2CC),Color.White,300),
+    Gauge("НЕОН",Color(0xFFB66CFF),CYAN,340),
+    Gauge("ТЕРЕК",GREEN,CYAN,320)
+)
 
 class MainActivity:ComponentActivity(){
- override fun onCreate(state:Bundle?){super.onCreate(state);requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_FULL_USER;createUpdateChannel(this);setContent{TerekDrive()}}
-}
-
-@Composable private fun TerekDrive(){
- val season=currentSeason()
- var tab by remember{mutableIntStateOf(0)}
- var sound by remember{mutableStateOf(true)}
- var animations by rememberSaveable{mutableStateOf(true)}
- val assistant=0
- var language by rememberSaveable{mutableIntStateOf(0)}
- var splash by rememberSaveable{mutableStateOf(true)}
- val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
- val context=LocalContext.current
- LaunchedEffect(Unit){
-  if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED)notificationPermission.launch("android.permission.POST_NOTIFICATIONS")
-  kotlinx.coroutines.delay(1800);splash=false;checkForUpdates(context)
- }
- MaterialTheme(colorScheme=darkColorScheme(background=season.bg,surface=PANEL,primary=season.accent,onBackground=Color.White,onSurface=Color.White)){
-  Surface(Modifier.fillMaxSize(),color=season.bg){
-   AnimatedContent(targetState=splash,transitionSpec={fadeIn(animationSpec=tween(450))+scaleIn(initialScale=.88f,animationSpec=tween(650)) togetherWith fadeOut(animationSpec=tween(300))},label="startup"){showSplash->
-    if(showSplash) SplashScreen() else Box(Modifier.fillMaxSize()){
-     SeasonEffects(season,animations)
-     Column(Modifier.fillMaxSize()){
-      Header(sound,season){sound=!sound}
-      Box(Modifier.weight(1f)){when(tab){
-       0->MapScreen();1->DriveScreen(sound,animations,assistant,language);2->GarageScreen();3->MediaScreen(sound);else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it})
-      }}
-      NavigationBar(containerColor=Color(0xFF090C10)){
-       val items=listOf(Icons.Default.Map to "Карта",Icons.Default.Speed to "Драйв",Icons.Default.DirectionsCar to "Гараж",Icons.Default.MusicNote to "Медиа",Icons.Default.Settings to "Настройки")
-       items.forEachIndexed{i,item->NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.first,null)},label={Text(item.second,fontSize=9.sp)})}
-      }
-     }
+    override fun onCreate(state:Bundle?){
+        super.onCreate(state)
+        requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        createUpdateChannel(this)
+        setContent{TerekDrive()}
     }
-   }
-  }
- }
 }
 
-@Composable private fun Header(sound:Boolean,season:Season,onSound:()->Unit){
- Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
-  Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(season.accent),contentAlignment=Alignment.Center){Text("TD",fontWeight=FontWeight.Black,fontSize=16.sp)}
-  Spacer(Modifier.width(12.dp));Column{Text("ТЕРЕК ДРАЙВ",fontWeight=FontWeight.Black,fontSize=19.sp,letterSpacing=1.3.sp);Text("MAP • DRIVE • MUSIC",color=MUTED,fontSize=9.sp,letterSpacing=1.sp)}
-  Spacer(Modifier.weight(1f));IconButton(onClick=onSound){Icon(if(sound)Icons.Default.VolumeUp else Icons.Default.VolumeOff,null,tint=if(sound)Color.White else MUTED)}
- }
+@Composable
+private fun TerekDrive(){
+    val season=currentSeason()
+    var tab by remember{mutableIntStateOf(0)}
+    var sound by rememberSaveable{mutableStateOf(true)}
+    var animations by rememberSaveable{mutableStateOf(true)}
+    var assistant by rememberSaveable{mutableIntStateOf(0)}
+    var language by rememberSaveable{mutableIntStateOf(0)}
+    var splash by rememberSaveable{mutableStateOf(true)}
+    val context=LocalContext.current
+    val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
+    LaunchedEffect(Unit){
+        if(Build.VERSION.SDK_INT>=33 &&
+            ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        delay(1800);splash=false;checkForUpdates(context)
+    }
+    MaterialTheme(colorScheme=darkColorScheme(background=season.bg,surface=PANEL,primary=season.accent,onBackground=Color.White,onSurface=Color.White)){
+        Surface(Modifier.fillMaxSize(),color=season.bg){
+            AnimatedContent(
+                targetState=splash,
+                transitionSpec={fadeIn(tween(450))+scaleIn(initialScale=.88f,animationSpec=tween(650)) togetherWith fadeOut(tween(300))},
+                label="startup"
+            ){showSplash->
+                if(showSplash) SplashScreen(season) else Box(Modifier.fillMaxSize()){
+                    SeasonEffects(season,animations)
+                    Column(Modifier.fillMaxSize()){
+                        Header(sound,season){sound=!sound}
+                        Box(Modifier.weight(1f)){
+                            when(tab){
+                                0->MapScreen(season)
+                                1->DriveScreen(sound,animations,assistant,language)
+                                2->GarageScreen(season)
+                                3->MediaScreen(sound,season)
+                                else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it},season)
+                            }
+                        }
+                        NavigationBar(containerColor=Color(0xFF090C10)){
+                            val items=listOf(
+                                Icons.Default.Map to "Карта",Icons.Default.Speed to "Драйв",
+                                Icons.Default.DirectionsCar to "Гараж",Icons.Default.MusicNote to "Медиа",
+                                Icons.Default.Settings to "Настройки"
+                            )
+                            items.forEachIndexed{i,item->
+                                NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.first,null)},label={Text(item.second,fontSize=9.sp)})
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
-@Composable private fun SeasonEffects(season:Season,animations:Boolean){
- val progress by rememberInfiniteTransition(label="season").animateFloat(0f,1f,infiniteRepeatable(tween(if(animations)4200 else 12000),RepeatMode.Restart),label="flow")
- Canvas(Modifier.fillMaxSize()){
-  val count=if(animations)34 else 10
-  repeat(count){i->
-   val x=((i*73)%100)/100f*size.width
-   val base=((i*41)%100)/100f*size.height
-   val y=(base+progress*size.height*(if(season==Season.WINTER).35f else .55f))%size.height
-   when(season){
-    Season.WINTER->{drawCircle(season.accent.copy(alpha=.22f),if(i%3==0)4f else 2f,Offset(x,y))}
-    Season.AUTUMN->{drawOval(season.accent.copy(alpha=.28f),androidx.compose.ui.geometry.Rect(x,y,x+7f,y+4f))}
-    Season.SPRING->{drawCircle(season.accent.copy(alpha=.22f),3f,Offset(x,y))}
-    Season.SUMMER->{drawCircle(season.accent.copy(alpha=.10f),if(i%4==0)7f else 3f,Offset(x,y))}
-   }
-  }
- }
+@Composable
+private fun SplashScreen(season:Season){
+    val pulse by rememberInfiniteTransition(label="splash").animateFloat(.88f,1.08f,infiniteRepeatable(tween(900),RepeatMode.Reverse),label="pulse")
+    Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+        Column(horizontalAlignment=Alignment.CenterHorizontally){
+            Box(Modifier.size((132*pulse).dp).clip(RoundedCornerShape(38.dp)).background(season.accent),contentAlignment=Alignment.Center){
+                Text("TD",color=BG,fontWeight=FontWeight.Black,fontSize=42.sp)
+            }
+            Spacer(Modifier.height(20.dp))
+            Text("ТЕРЕК ДРАЙВ",fontWeight=FontWeight.Black,fontSize=28.sp,letterSpacing=2.sp)
+            Text(season.emoji+" "+season.title+" • GPS • MAP • DRIVE",color=season.accent,fontSize=11.sp)
+        }
+    }
 }
+
+@Composable
+private fun Header(sound:Boolean,season:Season,onSound:()->Unit){
+    Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(season.accent),contentAlignment=Alignment.Center){
+            Text("TD",color=BG,fontWeight=FontWeight.Black,fontSize=16.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column{
+            Text("ТЕРЕК ДРАЙВ",fontWeight=FontWeight.Black,fontSize=19.sp,letterSpacing=1.3.sp)
+            Text(season.emoji+" "+season.title+" • MAP • DRIVE • MUSIC",color=MUTED,fontSize=9.sp)
+        }
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick=onSound){Icon(if(sound)Icons.Default.VolumeUp else Icons.Default.VolumeOff,null,tint=if(sound)season.accent else MUTED)}
+    }
+}
+
+@Composable
+private fun SeasonEffects(season:Season,animations:Boolean){
+    val progress by rememberInfiniteTransition(label="season").animateFloat(
+        0f,1f,infiniteRepeatable(tween(if(animations)4200 else 12000),RepeatMode.Restart),label="flow"
+    )
+    Canvas(Modifier.fillMaxSize()){
+        val count=if(animations)42 else 10
+        repeat(count){i->
+            val x=((i*73)%100)/100f*size.width
+            val base=((i*41)%100)/100f*size.height
+            val y=(base+progress*size.height*.55f)%size.height
+            when(season){
+                Season.WINTER->drawCircle(season.accent.copy(alpha=.22f),if(i%3==0)4f else 2f,Offset(x,y))
+                Season.AUTUMN->rotate(((i*37)%50-25).toFloat(),Offset(x,y)){drawOval(season.accent.copy(alpha=.30f),Rect(x,y,x+9f,y+5f))}
+                Season.SPRING->drawCircle(season.accent.copy(alpha=.22f),3f,Offset(x,y))
+                Season.SUMMER->drawCircle(season.accent.copy(alpha=.10f),if(i%4==0)7f else 3f,Offset(x,y))
+            }
+        }
+    }
+}
+
 private fun createUpdateChannel(context:Context){
- if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
-  val channel=NotificationChannel("updates","Обновления Терек Драйв",NotificationManager.IMPORTANCE_DEFAULT)
-  context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
- }
+    if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
+        context.getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel("updates","Обновления Терек Драйв",NotificationManager.IMPORTANCE_DEFAULT)
+        )
+    }
 }
 private fun checkForUpdates(context:Context){
- kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch{
-  runCatching{
-   val c=URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection;c.connectTimeout=5000;c.readTimeout=5000
-   val root=JSONObject(c.inputStream.bufferedReader().use{it.readText()});c.disconnect()
-   val remote=root.optInt("version",0)
-   if(remote>3 && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==android.content.pm.PackageManager.PERMISSION_GRANTED){
-    val n=android.app.Notification.Builder(context,"updates").setSmallIcon(android.R.drawable.stat_sys_download_done).setContentTitle("Терек Драйв обновлён").setContentText(root.optString("message","Доступна новая версия приложения")).setAutoCancel(true).build()
-    context.getSystemService(NotificationManager::class.java).notify(1201,n)
-   }
-  }
- }
-}
-@Composable private fun MapScreen(){
- var status by remember{mutableStateOf("Онлайн-карта готова")}
- val context=LocalContext.current
- Box(Modifier.fillMaxSize().padding(10.dp).clip(RoundedCornerShape(24.dp))){
-  AndroidView(factory={ctx->
-   MapView(ctx).also{v->v.onCreate(null);v.onStart();v.onResume();v.getMapAsync{map->
-    map.setStyle(STYLE_URL);map.cameraPosition=CameraPosition.Builder().target(LatLng(43.3178,45.6985)).zoom(11.0).build()
-   }}
-  },onRelease={v->v.onPause();v.onStop();v.onDestroy()})
-  Column(Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter)){
-   Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xEE111820)).padding(12.dp),verticalAlignment=Alignment.CenterVertically){
-    Icon(Icons.Default.Map,null,tint=CYAN);Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text("MAPLIBRE • OPENFREEMAP",fontWeight=FontWeight.Black,fontSize=12.sp);Text(status,color=MUTED,fontSize=10.sp)};Text("OFFLINE",color=GREEN,fontWeight=FontWeight.Black,fontSize=10.sp)
-   }
-   Spacer(Modifier.height(8.dp))
-   Button({status="Скачивание офлайн-карты…";downloadOffline(context){status=it}},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp),colors=ButtonDefaults.buttonColors(containerColor=Color(0xEE18242B))){
-    Icon(Icons.Default.Download,null);Spacer(Modifier.width(8.dp));Text("СКАЧАТЬ ГРОЗНЫЙ ДЛЯ OFFLINE")
-   }
-  }
-  Row(Modifier.align(Alignment.BottomCenter).padding(14.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xF20B1015)).padding(16.dp),verticalAlignment=Alignment.CenterVertically){
-   Column(Modifier.weight(1f)){Text("OpenStreetMap + OpenFreeMap",fontWeight=FontWeight.Bold);Text("Без 2ГИС-ключа • офлайн-пакет хранится на телефоне",color=MUTED,fontSize=11.sp)};Icon(Icons.Default.WifiOff,null,tint=GREEN)
-  }
- }
+    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch{
+        runCatching{
+            val c=URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection
+            c.connectTimeout=5000;c.readTimeout=5000
+            val root=JSONObject(c.inputStream.bufferedReader().use{it.readText()});c.disconnect()
+            val remote=root.optInt("version",0)
+            val last=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getInt(PREF_LAST_UPDATE,0)
+            if(remote>BuildConfig.VERSION_CODE && remote>last){
+                if(Build.VERSION.SDK_INT<33 || ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED){
+                    val intent=Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL))
+                    val pending=PendingIntent.getActivity(context,1201,intent,PendingIntent.FLAG_UPDATE_CURRENT or if(Build.VERSION.SDK_INT>=23)PendingIntent.FLAG_IMMUTABLE else 0)
+                    val builder=if(Build.VERSION.SDK_INT>=26) android.app.Notification.Builder(context,"updates") else android.app.Notification.Builder(context)
+                    val n=builder.setSmallIcon(android.R.drawable.stat_sys_download_done)
+                        .setContentTitle("Терек Драйв • новая версия")
+                        .setContentText(root.optString("message","Доступно обновление приложения"))
+                        .setAutoCancel(true).setContentIntent(pending).build()
+                    context.getSystemService(NotificationManager::class.java).notify(1201,n)
+                    context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putInt(PREF_LAST_UPDATE,remote).apply()
+                }
+            }
+        }
+    }
 }
 
-private fun downloadOffline(context:android.content.Context,done:(String)->Unit){
- val bounds=LatLngBounds.from(43.55,45.90,43.10,45.45)
- val definition=OfflineTilePyramidRegionDefinition(STYLE_URL,bounds,8.0,14.0,1f)
- OfflineManager.getInstance(context).createOfflineRegion(definition,"TerekDrive-Grozny".toByteArray(),object:OfflineManager.CreateOfflineRegionCallback{
-  override fun onCreate(region:OfflineRegion){region.setDownloadState(OfflineRegion.STATE_ACTIVE);done("Офлайн-загрузка запущена")}
-  override fun onError(error:String){done("Ошибка: $error")}
- })
+@Composable
+private fun MapScreen(season:Season){
+    var status by remember{mutableStateOf("Онлайн-карта готова")}
+    val context=LocalContext.current
+    Box(Modifier.fillMaxSize().padding(10.dp).clip(RoundedCornerShape(24.dp))){
+        AndroidView(
+            factory={ctx->
+                MapLibre.getInstance(ctx)
+                MapView(ctx).also{v->
+                    v.onCreate(null);v.onStart();v.onResume()
+                    v.getMapAsync{map->
+                        map.setStyle(STYLE_URL)
+                        map.cameraPosition=CameraPosition.Builder().target(LatLng(43.3178,45.6985)).zoom(11.0).build()
+                    }
+                }
+            },
+            onRelease={v->v.onPause();v.onStop();v.onDestroy()},
+            modifier=Modifier.fillMaxSize()
+        )
+        Column(Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter)){
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xEE111820)).padding(12.dp),verticalAlignment=Alignment.CenterVertically){
+                Icon(Icons.Default.Map,null,tint=season.accent);Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)){Text("MAPLIBRE • OPENFREEMAP",fontWeight=FontWeight.Black,fontSize=12.sp);Text(status,color=MUTED,fontSize=10.sp)}
+                Text("OFFLINE",color=GREEN,fontWeight=FontWeight.Black,fontSize=10.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            Button({status="Офлайн-загрузка запущена…";downloadOffline(context){status=it}},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){
+                Icon(Icons.Default.Download,null);Spacer(Modifier.width(8.dp));Text("СКАЧАТЬ ГРОЗНЫЙ ДЛЯ OFFLINE")
+            }
+        }
+        Row(Modifier.align(Alignment.BottomCenter).padding(14.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xF20B1015)).padding(16.dp),verticalAlignment=Alignment.CenterVertically){
+            Column(Modifier.weight(1f)){Text("OpenStreetMap + OpenFreeMap",fontWeight=FontWeight.Bold);Text("Карта работает отдельно от 2ГИС-ключа",color=MUTED,fontSize=11.sp)}
+            Icon(Icons.Default.WifiOff,null,tint=GREEN)
+        }
+    }
 }
 
-@Composable private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int){
- var gauge by remember{mutableIntStateOf(0)};var speed by remember{mutableIntStateOf(0)}
- var running by remember{mutableStateOf(false)};var started by remember{mutableLongStateOf(0L)};var elapsed by remember{mutableLongStateOf(0L)}
- val context=LocalContext.current
- val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){}
- DisposableEffect(Unit){
-  val lm=context.getSystemService(LocationManager::class.java)
-  val listener=object:LocationListener{override fun onLocationChanged(location:Location){speed=(location.speed*3.6f).toInt().coerceAtLeast(0)}}
-  if(context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED)runCatching{lm.requestLocationUpdates(LocationManager.GPS_PROVIDER,500L,1f,listener)}
-  onDispose{runCatching{lm.removeUpdates(listener)}}
- }
- LaunchedEffect(running){while(running){elapsed=SystemClock.elapsedRealtime()-started;kotlinx.coroutines.delay(50)}}
- Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-  Text("DRIVE LAB",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 тем • GPS скорость • секундомер",color=MUTED,fontSize=12.sp)
-  Spacer(Modifier.height(8.dp));RoadAnimation(speed,animations,Modifier.fillMaxWidth().height(72.dp));Spacer(Modifier.height(8.dp));RoadAnimation(speed,animations,Modifier.fillMaxWidth().height(72.dp));Spacer(Modifier.height(8.dp));SpeedGauge(gauges[gauge],speed.coerceIn(0,gauges[gauge].max),Modifier.fillMaxWidth().height(280.dp))
-  LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){itemsIndexed(gauges){i,g->Box(Modifier.width(100.dp).clip(RoundedCornerShape(14.dp)).background(if(i==gauge)g.color.copy(alpha=.18f)else PANEL).clickable{gauge=i}.padding(10.dp)){Text((i+1).toString()+". "+g.name,fontSize=10.sp,fontWeight=FontWeight.Bold)}}}
-  Spacer(Modifier.height(12.dp));Row(horizontalArrangement=Arrangement.spacedBy(10.dp),modifier=Modifier.fillMaxWidth()){
-   Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){Column(Modifier.padding(16.dp)){Text(speed.toString(),fontSize=34.sp,fontWeight=FontWeight.Black,color=CYAN);Text("км/ч • GPS",color=MUTED,fontSize=11.sp)}}
-   Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){Column(Modifier.padding(16.dp)){val sec=elapsed/1000;Text(String.format("%02d:%02d.%02d",sec/60,sec%60,(elapsed%1000)/10),fontSize=24.sp,fontWeight=FontWeight.Black,color=GREEN);Text("секундомер",color=MUTED,fontSize=11.sp)}}
-  }
-  Spacer(Modifier.height(10.dp));Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
-   Button({if(!running)started=SystemClock.elapsedRealtime()-elapsed;running=!running},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text(if(running)"ПАУЗА" else "СТАРТ")}
-   OutlinedButton({running=false;elapsed=0},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text("СБРОС")}
-  }
-  Spacer(Modifier.height(8.dp));Button({permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text("ВКЛЮЧИТЬ GPS-СКОРОСТЬ")}
-  NavigationPlanner(language,sound)
-  Text(if(sound)"🔊 сигналы включены" else "🔇 сигналы выключены",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(top=6.dp));AssistantPanel(sound,assistant,language)
- }
+private fun downloadOffline(context:Context,done:(String)->Unit){
+    runCatching{
+        val bounds=LatLngBounds.from(43.55,45.90,43.10,45.45)
+        val definition=OfflineTilePyramidRegionDefinition(STYLE_URL,bounds,8.0,14.0,1f)
+        OfflineManager.getInstance(context).createOfflineRegion(definition,"TerekDrive-Grozny".toByteArray(),object:OfflineManager.CreateOfflineRegionCallback{
+            override fun onCreate(region:OfflineRegion){region.setDownloadState(OfflineRegion.STATE_ACTIVE);done("Офлайн-загрузка запущена")}
+            override fun onError(error:String){done("Ошибка: $error")}
+        })
+    }.onFailure{done("Ошибка offline: "+it.message)}
+}
+
+@Composable
+private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int){
+    var gauge by rememberSaveable{mutableIntStateOf(0)}
+    var gpsSpeed by remember{mutableFloatStateOf(0f)}
+    var lastFixMs by remember{mutableLongStateOf(0L)}
+    var running by rememberSaveable{mutableStateOf(false)}
+    var started by rememberSaveable{mutableLongStateOf(0L)}
+    var elapsed by rememberSaveable{mutableLongStateOf(0L)}
+    var gpsEnabled by rememberSaveable{mutableStateOf(false)}
+    var locationState by remember{mutableStateOf("GPS не подключён")}
+    val context=LocalContext.current
+    val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){result->
+        gpsEnabled=result[Manifest.permission.ACCESS_FINE_LOCATION]==true || result[Manifest.permission.ACCESS_COARSE_LOCATION]==true
+    }
+
+    DisposableEffect(gpsEnabled){
+        if(!gpsEnabled)return@DisposableEffect onDispose{}
+        val lm=context.getSystemService(LocationManager::class.java)
+        val listener=object:LocationListener{
+            override fun onLocationChanged(location:Location){
+                gpsSpeed=if(location.hasSpeed())(location.speed*3.6f).coerceIn(0f,380f) else 0f
+                lastFixMs=SystemClock.elapsedRealtime()
+                locationState=if(location.hasSpeed())"GPS • "+location.accuracy.toInt()+" м" else "GPS • позиция"
+            }
+        }
+        runCatching{
+            if(ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED){
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER,250L,0.5f,listener)
+            }
+        }.onFailure{locationState="GPS недоступен"}
+        onDispose{runCatching{lm.removeUpdates(listener)}}
+    }
+
+    LaunchedEffect(Unit){
+        while(true){
+            if(lastFixMs!=0L && SystemClock.elapsedRealtime()-lastFixMs>2200L){
+                gpsSpeed=0f
+                locationState=if(gpsEnabled)"GPS • ожидание сигнала" else "GPS не подключён"
+            }
+            delay(250)
+        }
+    }
+    LaunchedEffect(running){
+        while(running){elapsed=SystemClock.elapsedRealtime()-started;delay(50)}
+    }
+
+    val target=gpsSpeed.coerceIn(0f,gauges[gauge].max.toFloat())
+    val speedDisplay by animateFloatAsState(targetValue=target,animationSpec=tween(if(target>gpsSpeed)240 else 160,easing=FastOutSlowInEasing),label="gps-speed")
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+        Text("DRIVE LAB",fontSize=25.sp,fontWeight=FontWeight.Black)
+        Text("РЕАЛЬНАЯ GPS-СКОРОСТЬ • 10 приборок • LIVE",color=MUTED,fontSize=12.sp)
+        Spacer(Modifier.height(7.dp))
+        Row(verticalAlignment=Alignment.CenterVertically){
+            Box(Modifier.size(9.dp).clip(RoundedCornerShape(9.dp)).background(if(gpsEnabled && lastFixMs!=0L)GREEN else RED))
+            Spacer(Modifier.width(7.dp));Text(locationState,color=MUTED,fontSize=10.sp)
+        }
+        Spacer(Modifier.height(7.dp))
+        RoadAnimation(speedDisplay,animations,Modifier.fillMaxWidth().height(68.dp))
+        Spacer(Modifier.height(7.dp))
+        SpeedometerGauge(gauges[gauge],speedDisplay,Modifier.fillMaxWidth().height(355.dp),animations)
+        Spacer(Modifier.height(6.dp))
+        LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            itemsIndexed(gauges){i,g->
+                Column(Modifier.width(108.dp).clip(RoundedCornerShape(15.dp)).background(if(i==gauge)g.accent.copy(alpha=.16f) else PANEL)
+                    .border(1.dp,if(i==gauge)g.accent else Color(0xFF252C34),RoundedCornerShape(15.dp)).clickable{gauge=i}.padding(10.dp)){
+                    Text("%02d".format(i+1),color=g.accent,fontSize=10.sp,fontWeight=FontWeight.Black)
+                    Text(g.name,fontSize=10.sp,fontWeight=FontWeight.Bold);Text("0—"+g.max,color=MUTED,fontSize=9.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(10.dp),modifier=Modifier.fillMaxWidth()){
+            Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){
+                Column(Modifier.padding(16.dp)){Text("%.0f".format(speedDisplay),fontSize=34.sp,fontWeight=FontWeight.Black,color=gauges[gauge].accent);Text("км/ч • GPS",color=MUTED,fontSize=11.sp)}
+            }
+            Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){
+                Column(Modifier.padding(16.dp)){val sec=elapsed/1000;Text("%02d:%02d.%02d".format(sec/60,sec%60,(elapsed%1000)/10),fontSize=24.sp,fontWeight=FontWeight.Black,color=GREEN);Text("секундомер",color=MUTED,fontSize=11.sp)}
+            }
+        }
+        Spacer(Modifier.height(9.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
+            Button({if(!running)started=SystemClock.elapsedRealtime()-elapsed;running=!running},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text(if(running)"ПАУЗА" else "СТАРТ")}
+            OutlinedButton({running=false;elapsed=0L},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text("СБРОС")}
+        }
+        Spacer(Modifier.height(8.dp))
+        Button({permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){
+            Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text(if(gpsEnabled)"ОБНОВИТЬ GPS-ДОСТУП" else "ВКЛЮЧИТЬ GPS-СКОРОСТЬ")
+        }
+        Spacer(Modifier.height(8.dp))
+        NavigationPlanner(language,sound)
+        Spacer(Modifier.height(8.dp))
+        AssistantPanel(sound,assistant,language)
+    }
+}
+
+@Composable
+private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animations:Boolean){
+    val pulse by rememberInfiniteTransition(label="gauge-pulse").animateFloat(.92f,1.06f,infiniteRepeatable(tween(if(animations)900 else 1800),RepeatMode.Reverse),label="pulse")
+    Canvas(modifier){
+        val center=Offset(size.width/2f,size.height/2f)
+        val r=minOf(size.width,size.height)*.39f
+        val outer=r+18f
+        drawCircle(Color(0xFF05080C),outer+7f,center)
+        drawCircle(Color(0xFF0C1117),outer,center)
+        drawCircle(Color(0xFF151B22),r,center)
+        drawCircle(Brush.radialGradient(listOf(gauge.accent.copy(alpha=.20f*pulse),Color.Transparent)),r+10f,center)
+        drawCircle(Color(0xFF070A0E),r*.49f,center)
+        drawArc(gauge.secondary.copy(alpha=.55f),135f,270f,false,style=Stroke(width=20f))
+        drawArc(gauge.accent,135f,270f,false,style=Stroke(width=5f))
+        for(i in 0..60){
+            val fraction=i/60f
+            val angle=Math.toRadians(135.0+270.0*fraction)
+            val major=i%5==0
+            val r1=r-8f;val r2=r-if(major)29f else 18f
+            drawLine(gauge.accent.copy(alpha=if(major).95f else .55f),
+                Offset(center.x+cos(angle).toFloat()*r1,center.y+sin(angle).toFloat()*r1),
+                Offset(center.x+cos(angle).toFloat()*r2,center.y+sin(angle).toFloat()*r2),
+                if(major)4.2f else 1.8f)
+        }
+        val labelPaint=android.graphics.Paint().apply{isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=15f;typeface=android.graphics.Typeface.DEFAULT_BOLD}
+        for(i in 0..6){
+            val value=gauge.max*i/6
+            val angle=Math.toRadians(135.0+270.0*(i/6f))
+            val rr=r-52f
+            drawContext.canvas.nativeCanvas.drawText(value.toString(),center.x+cos(angle).toFloat()*rr,center.y+sin(angle).toFloat()*rr+5f,labelPaint)
+        }
+        val fraction=(speed/gauge.max).coerceIn(0f,1f)
+        val needleAngle=Math.toRadians(135.0+270.0*fraction)
+        val needleLength=r*.73f
+        val tip=Offset(center.x+cos(needleAngle).toFloat()*needleLength,center.y+sin(needleAngle).toFloat()*needleLength)
+        drawLine(gauge.accent.copy(alpha=.22f),center,tip,13f,StrokeCap.Round)
+        drawLine(gauge.accent,center,tip,5.5f,StrokeCap.Round)
+        drawCircle(gauge.accent,13f,center);drawCircle(Color(0xFF0B0F14),6f,center)
+        val speedPaint=android.graphics.Paint().apply{isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=55f;typeface=android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD)}
+        drawContext.canvas.nativeCanvas.drawText("%.0f".format(speed),center.x,center.y+20f,speedPaint)
+        val unitPaint=android.graphics.Paint().apply{isAntiAlias=true;color=gauge.accent.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=15f;typeface=android.graphics.Typeface.DEFAULT_BOLD}
+        drawContext.canvas.nativeCanvas.drawText("km/h • GPS",center.x,center.y+43f,unitPaint)
+        val statusPaint=android.graphics.Paint().apply{isAntiAlias=true;color=Color(0xFF8995A3).toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=10f}
+        drawContext.canvas.nativeCanvas.drawText(if(speed<1f)"СТОИТ • 0 КМ/Ч" else "LIVE • GPS SPEED",center.x,center.y+r*.62f,statusPaint)
+    }
+}
+
+@Composable
+private fun RoadAnimation(speed:Float,animations:Boolean,modifier:Modifier){
+    val offset by rememberInfiniteTransition(label="road").animateFloat(0f,1f,infiniteRepeatable(tween(if(animations)900 else 5000),RepeatMode.Restart),label="road")
+    Canvas(modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF080B0F))){
+        val moving=speed>.5f
+        val roadTop=size.height*.20f;val roadBottom=size.height*.88f
+        drawRect(Color(0xFF11161C),topLeft=Offset(0f,roadTop),size=androidx.compose.ui.geometry.Size(size.width,roadBottom-roadTop))
+        val centerX=size.width/2f
+        val dashTravel=if(moving)offset*80f else 0f
+        for(i in -1..12){
+            val y=roadTop+((i*45f+dashTravel)%560f)
+            drawRoundRect(Color(0xFF9BA4AE).copy(alpha=.65f),Offset(centerX-3f,y),androidx.compose.ui.geometry.Size(6f,25f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(4f,4f))
+        }
+        drawLine(Color(0xFF333A42),Offset(0f,roadTop),Offset(size.width,roadTop),2f)
+        drawLine(Color(0xFF333A42),Offset(0f,roadBottom),Offset(size.width,roadBottom),2f)
+        val carY=size.height*.60f
+        drawRoundRect(RED.copy(alpha=.95f),Offset(centerX-26f,carY),androidx.compose.ui.geometry.Size(52f,25f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(9f,9f))
+        drawCircle(Color(0xFFFF8A80),5f,Offset(centerX-15f,carY+20f));drawCircle(Color(0xFFFF8A80),5f,Offset(centerX+15f,carY+20f))
+        if(!moving)drawContext.canvas.nativeCanvas.drawText("СТОИМ • GPS = 0",centerX,size.height*.14f,android.graphics.Paint().apply{isAntiAlias=true;color=MUTED.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=11f})
+    }
 }
 
 private data class Maneuver(val instruction:String,val distance:Int,val icon:String)
 private data class RouteResult(val distanceKm:Double,val durationMin:Int,val maneuvers:List<Maneuver>)
-@Composable private fun NavigationPlanner(language:Int,sound:Boolean){
- var destination by rememberSaveable{mutableStateOf("")};var loading by remember{mutableStateOf(false)};var route by remember{mutableStateOf<RouteResult?>(null)};var error by remember{mutableStateOf("")}
- val scope=rememberCoroutineScope()
- Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
-  Column(Modifier.padding(15.dp)){
-   Text("ПОЛНОЦЕННАЯ НАВИГАЦИЯ",fontWeight=FontWeight.Black,fontSize=15.sp);Text("точка назначения • маршрут • манёвры",color=MUTED,fontSize=10.sp)
-   Spacer(Modifier.height(8.dp))
-   OutlinedTextField(value=destination,onValueChange={destination=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Куда едем?")},placeholder={Text("Например: аэропорт Грозного")})
-   Spacer(Modifier.height(7.dp))
-   Button({if(destination.isNotBlank()){loading=true;error="";scope.launch{val result=withContext(Dispatchers.IO){buildRoute(destination)};route=result;loading=false;if(result==null)error="Маршрут не найден или нет сети."}}},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){Icon(Icons.Default.Route,null);Spacer(Modifier.width(7.dp));Text(if(loading)"СТРОЮ МАРШРУТ…" else "ПОСТРОИТЬ МАРШРУТ")}
-   if(error.isNotBlank())Text(error,color=RED,fontSize=10.sp)
-   route?.let{r->Spacer(Modifier.height(8.dp));Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){SpecCard("ДИСТАНЦИЯ",String.format("%.1f км",r.distanceKm),CYAN,Modifier.weight(1f));SpecCard("ВРЕМЯ",r.durationMin.toString()+" мин",GREEN,Modifier.weight(1f));SpecCard("ШАГИ",r.maneuvers.size.toString(),RED,Modifier.weight(1f))}
-    Spacer(Modifier.height(7.dp));Text("МАНЁВРЫ",fontWeight=FontWeight.Black,fontSize=11.sp)
-    r.maneuvers.take(8).forEach{m->Row(Modifier.fillMaxWidth().padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically){Text(m.icon,fontSize=18.sp);Spacer(Modifier.width(8.dp));Column(Modifier.weight(1f)){Text(m.instruction,fontSize=10.sp,fontWeight=FontWeight.Bold);Text(if(m.distance<1000)m.distance.toString()+" м" else String.format("%.1f км",m.distance/1000.0),color=MUTED,fontSize=9.sp)}}}
-   }
-  }
- }
-}
-private fun buildRoute(query:String):RouteResult?{
- return runCatching{
-  val gConn=URL("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+Uri.encode(query)).openConnection() as HttpURLConnection
-  gConn.setRequestProperty("User-Agent","TerekDrive/1.1");gConn.connectTimeout=7000;gConn.readTimeout=7000
-  val g=JSONArray(gConn.inputStream.bufferedReader().use{it.readText()});gConn.disconnect();if(g.length()==0)return null
-  val lat=g.getJSONObject(0).getDouble("lat");val lon=g.getJSONObject(0).getDouble("lon")
-  val c=URL("https://router.project-osrm.org/route/v1/driving/45.6985,43.3178;$lon,$lat?overview=false&steps=true").openConnection() as HttpURLConnection
-  c.setRequestProperty("User-Agent","TerekDrive/1.1");c.connectTimeout=8000;c.readTimeout=8000
-  val root=JSONObject(c.inputStream.bufferedReader().use{it.readText()});c.disconnect();val rr=root.getJSONArray("routes").getJSONObject(0)
-  val steps=rr.getJSONArray("legs").getJSONObject(0).getJSONArray("steps");val list=mutableListOf<Maneuver>()
-  for(i in 0 until steps.length()){val st=steps.getJSONObject(i);val m=st.getJSONObject("maneuver");val type=m.optString("type");val mod=m.optString("modifier");val dist=st.optDouble("distance",0.0).toInt();if(dist>0){val icon=when(mod){"left"->"←";"right"->"→";"slight left"->"↖";"slight right"->"↗";"straight"->"↑";else->"●"};val text=when(type){"depart"->"Начало движения";"arrive"->"Прибытие";"roundabout"->"Круговое движение";"turn"->"Поворот "+when(mod){"left"->"налево";"right"->"направо";else->"прямо"};else->"Продолжайте движение"};list.add(Maneuver(text,dist,icon))}}
-  RouteResult(rr.getDouble("distance")/1000.0,(rr.getDouble("duration")/60.0).toInt(),list)
- }.getOrNull()
-}
-@Composable private fun SpeedGauge(g:Gauge,speed:Int,m:Modifier){
- val pulse by rememberInfiniteTransition(label="g").animateFloat(.85f,1.08f,infiniteRepeatable(tween(900),RepeatMode.Reverse),label="pulse")
- Canvas(m){
-  val c=Offset(size.width/2,size.height/2);val r=minOf(size.width,size.height)*.36f
-  drawCircle(Color(0xFF0A0D11),r+20,c);drawCircle(Color(0xFF151A20),r,c);drawCircle(g.color.copy(alpha=.08f*pulse),r+12,c)
-  drawArc(g.color.copy(alpha=.18f),135f,270f,false,style=Stroke(22f));drawArc(g.color,135f,270f*speed/g.max,false,style=Stroke(9f))
-  for(i in 0..30){val a=Math.toRadians((135+i*9).toDouble());val r1=r-5;val r2=r-(if(i%5==0)19 else 11);drawLine(g.color.copy(alpha=.7f),Offset(c.x+cos(a).toFloat()*r1,c.y+sin(a).toFloat()*r1),Offset(c.x+cos(a).toFloat()*r2,c.y+sin(a).toFloat()*r2),if(i%5==0)4f else 2f)}
-  val a=Math.toRadians(135.0+270.0*speed/g.max);val n=Offset(c.x+cos(a).toFloat()*r*.76f,c.y+sin(a).toFloat()*r*.76f);drawLine(g.color,c,n,7f,StrokeCap.Round);drawCircle(g.color,10f,c)
-  drawContext.canvas.nativeCanvas.drawText(speed.toString(),c.x-45,c.y+25,android.graphics.Paint().apply{color=android.graphics.Color.WHITE;textSize=54f;typeface=android.graphics.Typeface.DEFAULT_BOLD})
- }
+
+@Composable
+private fun NavigationPlanner(language:Int,sound:Boolean){
+    var destination by rememberSaveable{mutableStateOf("")}
+    var loading by remember{mutableStateOf(false)}
+    var route by remember{mutableStateOf<RouteResult?>(null)}
+    var error by remember{mutableStateOf("")}
+    val scope=rememberCoroutineScope()
+    Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+        Column(Modifier.padding(15.dp)){
+            Text("НАВИГАЦИЯ",fontWeight=FontWeight.Black,fontSize=15.sp)
+            Text("точка назначения • маршрут • манёвры",color=MUTED,fontSize=10.sp)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(value=destination,onValueChange={destination=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Куда едем?")},placeholder={Text("Например: аэропорт Грозного")})
+            Spacer(Modifier.height(7.dp))
+            Button({
+                if(destination.isNotBlank()){
+                    loading=true;error=""
+                    scope.launch{
+                        val result=withContext(Dispatchers.IO){buildRoute(destination)}
+                        route=result;loading=false;if(result==null)error="Маршрут не найден или нет сети."
+                    }
+                }
+            },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){
+                Icon(Icons.Default.Route,null);Spacer(Modifier.width(7.dp));Text(if(loading)"СТРОЮ МАРШРУТ…" else "ПОСТРОИТЬ МАРШРУТ")
+            }
+            if(error.isNotBlank())Text(error,color=RED,fontSize=10.sp)
+            route?.let{r->
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                    SpecCard("ДИСТАНЦИЯ","%.1f км".format(r.distanceKm),CYAN,Modifier.weight(1f))
+                    SpecCard("ВРЕМЯ",r.durationMin.toString()+" мин",GREEN,Modifier.weight(1f))
+                    SpecCard("ШАГИ",r.maneuvers.size.toString(),RED,Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(7.dp));Text("МАНЁВРЫ",fontWeight=FontWeight.Black,fontSize=11.sp)
+                r.maneuvers.take(8).forEach{m->
+                    Row(Modifier.fillMaxWidth().padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically){
+                        Text(m.icon,fontSize=18.sp);Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)){Text(m.instruction,fontSize=10.sp,fontWeight=FontWeight.Bold);Text(if(m.distance<1000)m.distance.toString()+" м" else "%.1f км".format(m.distance/1000.0),color=MUTED,fontSize=9.sp)}
+                    }
+                }
+            }
+        }
+    }
 }
 
-@Composable private fun GarageScreen(){
- var selected by rememberSaveable{mutableIntStateOf(0)};val car=cars[selected]
- Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-  Text("МОЙ ГАРАЖ",fontSize=25.sp,fontWeight=FontWeight.Black);Text("10 машин • характеристики • режимы",color=MUTED,fontSize=12.sp);Spacer(Modifier.height(12.dp))
-  Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically){
-   Text(carEmoji(car.type),fontSize=72.sp);Spacer(Modifier.width(14.dp));Column{Text(car.name,fontSize=24.sp,fontWeight=FontWeight.Black);Text(car.type,color=RED,fontWeight=FontWeight.Bold);Text("Подготовлена для DRIVE режима",color=MUTED,fontSize=10.sp)}
-  }}
-  Spacer(Modifier.height(12.dp))
-  LazyRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){itemsIndexed(cars){i,c->Column(Modifier.width(155.dp).clip(RoundedCornerShape(20.dp)).background(if(i==selected)Color(0xFF211317)else PANEL).border(1.dp,if(i==selected)RED else Color(0xFF252C34),RoundedCornerShape(20.dp)).clickable{selected=i}.padding(12.dp)){
-   Box(Modifier.fillMaxWidth().height(92.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFF0A0E12)),contentAlignment=Alignment.Center){Text(carEmoji(c.type),fontSize=54.sp)}
-   Spacer(Modifier.height(8.dp));Text(c.name,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(c.hp.toString()+" л.с. • "+c.top+" км/ч",color=MUTED,fontSize=10.sp)
-  }}}
-  Spacer(Modifier.height(12.dp));Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
-   SpecCard("МОЩНОСТЬ",car.hp.toString()+" л.с.",RED,Modifier.weight(1f));SpecCard("МАКС.",car.top.toString()+" км/ч",CYAN,Modifier.weight(1f));SpecCard("КЛАСС",car.type,GREEN,Modifier.weight(1f))
-  }
- }
+private fun buildRoute(query:String):RouteResult? = runCatching{
+    val gConn=URL("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+Uri.encode(query)).openConnection() as HttpURLConnection
+    gConn.setRequestProperty("User-Agent","TerekDrive/1.3");gConn.connectTimeout=7000;gConn.readTimeout=7000
+    val g=JSONArray(gConn.inputStream.bufferedReader().use{it.readText()});gConn.disconnect()
+    if(g.length()==0)return@runCatching null
+    val lat=g.getJSONObject(0).getDouble("lat");val lon=g.getJSONObject(0).getDouble("lon")
+    val c=URL("https://router.project-osrm.org/route/v1/driving/45.6985,43.3178;$lon,$lat?overview=false&steps=true").openConnection() as HttpURLConnection
+    c.setRequestProperty("User-Agent","TerekDrive/1.3");c.connectTimeout=8000;c.readTimeout=8000
+    val root=JSONObject(c.inputStream.bufferedReader().use{it.readText()});c.disconnect()
+    val rr=root.getJSONArray("routes").getJSONObject(0);val steps=rr.getJSONArray("legs").getJSONObject(0).getJSONArray("steps");val list=mutableListOf<Maneuver>()
+    for(i in 0 until steps.length()){
+        val st=steps.getJSONObject(i);val m=st.getJSONObject("maneuver");val type=m.optString("type");val mod=m.optString("modifier");val dist=st.optDouble("distance",0.0).toInt()
+        if(dist>0){
+            val icon=when(mod){"left"->"←";"right"->"→";"slight left"->"↖";"slight right"->"↗";"straight"->"↑";else->"●"}
+            val text=when(type){"depart"->"Начало движения";"arrive"->"Прибытие";"roundabout"->"Круговое движение";"turn"->"Поворот "+when(mod){"left"->"налево";"right"->"направо";else->"прямо"};else->"Продолжайте движение"}
+            list.add(Maneuver(text,dist,icon))
+        }
+    }
+    RouteResult(rr.getDouble("distance")/1000.0,(rr.getDouble("duration")/60.0).toInt(),list)
+}.getOrNull()
+
+@Composable
+private fun AssistantPanel(sound:Boolean,assistantIndex:Int,language:Int){
+    val context=LocalContext.current
+    var tts by remember{mutableStateOf<TextToSpeech?>(null)}
+    DisposableEffect(Unit){
+        var engine:TextToSpeech?=null
+        engine=TextToSpeech(context){status->if(status==TextToSpeech.SUCCESS)engine?.let{applyVoice(it,gena,language)}}
+        tts=engine
+        onDispose{engine?.stop();engine?.shutdown()}
+    }
+    Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+        Column(Modifier.padding(15.dp)){
+            Text("ГЕНА • ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black,fontSize=15.sp)
+            Text("Один голос • "+languages[language].name+" • TTS-навигация",color=MUTED,fontSize=10.sp)
+            Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth().padding(top=9.dp)){
+                Box(Modifier.size(54.dp).clip(RoundedCornerShape(16.dp)).background(RED),contentAlignment=Alignment.Center){Text("Г",fontSize=28.sp,fontWeight=FontWeight.Black)}
+                Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text("Гена",fontSize=18.sp,fontWeight=FontWeight.Black);Text("спокойный мужской голос",color=MUTED,fontSize=10.sp)}
+                Icon(Icons.Default.RecordVoiceOver,null,tint=GREEN)
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
+                Button({if(sound)tts?.let{applyVoice(it,gena,language);it.speak("Гена на связи. Хорошей дороги!",TextToSpeech.QUEUE_FLUSH,null,"greeting")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПРОВЕРИТЬ")}
+                OutlinedButton({if(sound)tts?.let{applyVoice(it,gena,language);it.speak("Следите за скоростью, держите дистанцию и не отвлекайтесь от дороги.",TextToSpeech.QUEUE_FLUSH,null,"hint")}},Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){Text("ПОДСКАЗКА")}
+            }
+        }
+    }
 }
-private fun carEmoji(type:String)=when(type){"SUV"->"🚙";"SUPER"->"🏎️";"MUSCLE"->"🚗";else->"🏎️"}
-@Composable private fun SpecCard(title:String,value:String,tint:Color,modifier:Modifier){
- Card(modifier,colors=CardDefaults.cardColors(containerColor=PANEL)){Column(Modifier.padding(12.dp)){Text(title,color=MUTED,fontSize=8.sp);Text(value,color=tint,fontSize=13.sp,fontWeight=FontWeight.Black)}}
+private fun applyVoice(tts:TextToSpeech,profile:Assistant,languageIndex:Int){
+    val requested=Locale(languages[languageIndex].tag);val result=tts.setLanguage(requested)
+    val actual=if(result==TextToSpeech.LANG_MISSING_DATA||result==TextToSpeech.LANG_NOT_SUPPORTED)Locale.getDefault() else requested
+    tts.voices?.firstOrNull{it.locale.language==actual.language}?.let{tts.voice=it}
+    tts.setPitch(profile.pitch);tts.setSpeechRate(profile.rate)
 }
 
+@Composable
+private fun GarageScreen(season:Season){
+    var selected by rememberSaveable{mutableIntStateOf(0)}
+    val car=cars[selected]
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+        Text("МОЙ ГАРАЖ",fontSize=25.sp,fontWeight=FontWeight.Black)
+        Text("10 машин • характеристики • реальные приборы DRIVE",color=MUTED,fontSize=12.sp)
+        Spacer(Modifier.height(10.dp))
+        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(16.dp)){
+                CarVisual(car,Modifier.fillMaxWidth().height(155.dp),season.accent)
+                Spacer(Modifier.height(8.dp));Text(car.name,fontSize=24.sp,fontWeight=FontWeight.Black)
+                Text(car.type+" • "+car.drive,color=season.accent,fontWeight=FontWeight.Bold)
+                Text("Подготовлена для DRIVE режима",color=MUTED,fontSize=10.sp)
+            }
+        }
+        Spacer(Modifier.height(11.dp))
+        LazyRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){
+            itemsIndexed(cars){i,c->
+                Column(Modifier.width(170.dp).clip(RoundedCornerShape(20.dp)).background(if(i==selected)season.accent.copy(alpha=.12f) else PANEL)
+                    .border(1.dp,if(i==selected)season.accent else Color(0xFF252C34),RoundedCornerShape(20.dp)).clickable{selected=i}.padding(11.dp)){
+                    CarVisual(c,Modifier.fillMaxWidth().height(85.dp),season.accent)
+                    Spacer(Modifier.height(7.dp));Text(c.name,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(c.hp.toString()+" л.с. • "+c.top+" км/ч",color=MUTED,fontSize=10.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(11.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
+            SpecCard("МОЩНОСТЬ",car.hp.toString()+" л.с.",RED,Modifier.weight(1f))
+            SpecCard("МОМЕНТ",car.torque.toString()+" Нм",CYAN,Modifier.weight(1f))
+            SpecCard("МАССА",car.weight.toString()+" кг",GREEN,Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
+            SpecCard("МАКС.",car.top.toString()+" км/ч",season.accent,Modifier.weight(1f))
+            SpecCard("ПРИВОД",car.drive,season.accent,Modifier.weight(1f))
+            SpecCard("КЛАСС",car.type,season.accent,Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun CarVisual(car:Car,modifier:Modifier,accent:Color){
+    Canvas(modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF080B0F))){
+        val cx=size.width/2f;val y=size.height*.57f
+        val w=size.width*when(car.type){"SUPER"->.76f;"SUV"->.72f;"MUSCLE"->.80f;else->.78f}
+        val h=size.height*when(car.type){"SUV"->.30f;else->.24f}
+        drawOval(Color.Black.copy(alpha=.65f),Rect(cx-w*.52f,y+h*.30f,cx+w*.52f,y+h*.58f))
+        drawRoundRect(Color(0xFF161D25),Offset(cx-w/2,y-h/2),androidx.compose.ui.geometry.Size(w,h),cornerRadius=androidx.compose.ui.geometry.CornerRadius(20f,20f))
+        val cabinW=w*.48f
+        val cabinPath=Path().apply{
+            moveTo(cx-cabinW/2,y-h*.45f);lineTo(cx-cabinW*.32f,y-h*.95f);lineTo(cx+cabinW*.30f,y-h*.95f);lineTo(cx+cabinW/2,y-h*.45f);close()
+        }
+        drawPath(cabinPath,Color(0xFF202D3A))
+        drawLine(accent.copy(alpha=.9f),Offset(cx-w*.42f,y-h*.18f),Offset(cx+w*.42f,y-h*.18f),3f)
+        drawRoundRect(accent.copy(alpha=.85f),Offset(cx-w*.43f,y+h*.18f),androidx.compose.ui.geometry.Size(w*.16f,h*.10f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(8f,8f))
+        drawRoundRect(accent.copy(alpha=.85f),Offset(cx+w*.27f,y+h*.18f),androidx.compose.ui.geometry.Size(w*.16f,h*.10f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(8f,8f))
+        drawCircle(Color(0xFF030507),h*.27f,Offset(cx-w*.31f,y+h*.42f));drawCircle(Color(0xFF030507),h*.27f,Offset(cx+w*.31f,y+h*.42f))
+        drawCircle(Color(0xFF4B5662),h*.11f,Offset(cx-w*.31f,y+h*.42f));drawCircle(Color(0xFF4B5662),h*.11f,Offset(cx+w*.31f,y+h*.42f))
+        drawContext.canvas.nativeCanvas.drawText(car.name.uppercase(),cx,size.height*.91f,android.graphics.Paint().apply{isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=10f;typeface=android.graphics.Typeface.DEFAULT_BOLD})
+    }
+}
+
+@Composable
+private fun MediaScreen(sound:Boolean,season:Season){
+    var selected by rememberSaveable{mutableStateOf("")}
+    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->selected=uri?.toString().orEmpty()}
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+        Text("MEDIA",fontSize=25.sp,fontWeight=FontWeight.Black)
+        Text("Локальная музыка • без обязательного интернета",color=MUTED,fontSize=12.sp)
+        Spacer(Modifier.height(12.dp))
+        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(16.dp)){
+                Icon(Icons.Default.MusicNote,null,tint=season.accent,modifier=Modifier.size(34.dp))
+                Spacer(Modifier.height(8.dp));Text("Твоя музыка",fontSize=20.sp,fontWeight=FontWeight.Black)
+                Text(if(selected.isBlank())"Файл ещё не выбран" else "Трек выбран из памяти телефона",color=MUTED,fontSize=11.sp)
+                Spacer(Modifier.height(10.dp))
+                Button({picker.launch("audio/*")},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){Text("ВЫБРАТЬ АУДИО")}
+                if(selected.isNotBlank())OutlinedButton({
+                    if(sound)ToneGenerator(AudioManager.STREAM_MUSIC,70).apply{startTone(ToneGenerator.TONE_PROP_BEEP,150);release()}
+                },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){Text("ПРОВЕРИТЬ ЗВУК")}
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int,onSound:()->Unit,onAnimations:()->Unit,onAssistant:(Int)->Unit,onLanguage:(Int)->Unit,season:Season){
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+        Text("НАСТРОЙКИ",fontSize=25.sp,fontWeight=FontWeight.Black)
+        Text("ТЕРЕК ДРАЙВ • персонализация",color=MUTED,fontSize=12.sp)
+        Spacer(Modifier.height(10.dp))
+        SettingToggle("ЗВУК","Системные сигналы и Гена",sound,onSound,season.accent)
+        SettingToggle("АНИМАЦИИ","Листья • снег • неон • дорога",animations,onAnimations,season.accent)
+        Spacer(Modifier.height(8.dp))
+        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(15.dp)){Text("СЕЗОН",fontWeight=FontWeight.Black);Text(season.emoji+" "+season.title+" • меняется автоматически по календарю",color=season.accent,fontSize=11.sp)}
+        }
+        Spacer(Modifier.height(8.dp))
+        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(15.dp)){
+                Text("ЯЗЫК",fontWeight=FontWeight.Black)
+                languages.forEachIndexed{i,lang->
+                    Row(Modifier.fillMaxWidth().clickable{onLanguage(i)}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
+                        RadioButton(i==language,{onLanguage(i)});Text(lang.name,fontWeight=if(i==language)FontWeight.Bold else FontWeight.Normal)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp));AssistantSettings(assistant,onAssistant)
+        Spacer(Modifier.height(8.dp));Text("Версия 1.3 • GPS speedometer",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(4.dp))
+    }
+}
+
+@Composable
+private fun SettingToggle(title:String,subtitle:String,checked:Boolean,onClick:()->Unit,accent:Color){
+    Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+        Row(Modifier.fillMaxWidth().padding(15.dp),verticalAlignment=Alignment.CenterVertically){
+            Column(Modifier.weight(1f)){Text(title,fontWeight=FontWeight.Black);Text(subtitle,color=MUTED,fontSize=10.sp)}
+            Switch(checked,{onClick()},colors=SwitchDefaults.colors(checkedThumbColor=accent))
+        }
+    }
+}
+
+@Composable
+private fun AssistantSettings(selected:Int,onSelect:(Int)->Unit){
+    Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+        Column(Modifier.padding(15.dp)){
+            Text("ГОЛОСОВОЙ ШТУРМАН",fontWeight=FontWeight.Black)
+            Text("Гена — единственный голос приложения.",color=MUTED,fontSize=10.sp)
+            Row(Modifier.fillMaxWidth().clickable{onSelect(0)}.padding(top=7.dp),verticalAlignment=Alignment.CenterVertically){
+                RadioButton(true,{onSelect(0)});Text("Гена",fontWeight=FontWeight.Bold);Spacer(Modifier.width(8.dp));Text("мужской • спокойный",color=MUTED,fontSize=10.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpecCard(title:String,value:String,tint:Color,modifier:Modifier){
+    Card(modifier,colors=CardDefaults.cardColors(containerColor=PANEL)){
+        Column(Modifier.padding(11.dp)){Text(title,color=MUTED,fontSize=8.sp);Text(value,color=tint,fontSize=12.sp,fontWeight=FontWeight.Black)}
+    }
+}
