@@ -254,6 +254,7 @@ private fun TerekDrive(){
                             }
                         }
                     }
+                    QuickNavBar(tab=tab,onMap={tab=0},onDrive={tab=1},onMusic={tab=3},onGena={genaOpen=true},season=season)
                     GenaQuickCall(open=genaOpen,onOpen={genaOpen=true},onClose={genaOpen=false},sound=sound,language=language,season=season)
                 }
             }
@@ -293,6 +294,24 @@ private fun genaAnswer(text:String):String {
     if(q.contains("время")||q.contains("который час")) return "Сейчас "+java.text.SimpleDateFormat("HH:mm",Locale.getDefault()).format(java.util.Date())+". Время ехать спокойно, а не торопиться."
     if(q.contains("молодец")||q.contains("круто")) return listOf("Спасибо! Я стараюсь. У меня даже стрелка настроения есть — почти в красной зоне.","Вот это разговор. Едем дальше, шеф.").random()
     return genaFallbacks.random()
+}
+
+@Composable
+private fun QuickNavBar(tab:Int,onMap:()->Unit,onDrive:()->Unit,onMusic:()->Unit,onGena:()->Unit,season:Season){
+    Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+        val items=listOf(
+            Triple("КАРТА",Icons.Default.Map,onMap),
+            Triple("НАВИГ",Icons.Default.Navigation,onDrive),
+            Triple("МУЗЫКА",Icons.Default.MusicNote,onMusic),
+            Triple("ГЕНА",Icons.Default.RecordVoiceOver,onGena)
+        )
+        items.forEachIndexed{index,item->
+            FilledTonalButton(onClick=item.third,modifier=Modifier.weight(1f).height(42.dp),contentPadding=PaddingValues(horizontal=5.dp),shape=RoundedCornerShape(14.dp),
+                colors=ButtonDefaults.filledTonalButtonColors(containerColor=if((index==0&&tab==0)||(index==1&&tab==1)||(index==2&&tab==3))season.accent.copy(alpha=.18f) else Color(0xEE111820))){
+                Icon(item.second,null,Modifier.size(17.dp),tint=season.accent);Spacer(Modifier.width(4.dp));Text(item.first,fontSize=8.sp,fontWeight=FontWeight.Black)
+            }
+        }
+    }
 }
 
 @Composable
@@ -582,6 +601,8 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
     var started by rememberSaveable{mutableLongStateOf(0L)}
     var elapsed by rememberSaveable{mutableLongStateOf(0L)}
     var gpsEnabled by rememberSaveable{mutableStateOf(false)}
+    var currentLat by remember{mutableStateOf<Double?>(null)}
+    var currentLon by remember{mutableStateOf<Double?>(null)}
     var locationState by remember{mutableStateOf("GPS не подключён")}
     val context=LocalContext.current
     val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){result->
@@ -593,6 +614,8 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
         val lm=context.getSystemService(LocationManager::class.java)
         val listener=object:LocationListener{
             override fun onLocationChanged(location:Location){
+                currentLat=location.latitude
+                currentLon=location.longitude
                 gpsSpeed=if(location.hasSpeed())(location.speed*3.6f).coerceIn(0f,380f) else 0f
                 lastFixMs=SystemClock.elapsedRealtime()
                 locationState=if(location.hasSpeed())"GPS • "+location.accuracy.toInt()+" м" else "GPS • позиция"
@@ -664,7 +687,7 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
             Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text(if(gpsEnabled)"ОБНОВИТЬ GPS-ДОСТУП" else "ВКЛЮЧИТЬ GPS-СКОРОСТЬ")
         }
         Spacer(Modifier.height(8.dp))
-        NavigationPlanner(language,sound)
+        NavigationPlanner(language,sound,currentLat,currentLon,onOpenMap={})
         Spacer(Modifier.height(8.dp))
         AssistantPanel(sound,assistant,language)
     }
@@ -740,7 +763,7 @@ private fun RoadAnimation(speed:Float,animations:Boolean,modifier:Modifier){
 }
 
 private data class Maneuver(val instruction:String,val distance:Int,val icon:String)
-private data class RouteResult(val distanceKm:Double,val durationMin:Int,val maneuvers:List<Maneuver>)
+private data class RouteResult(val distanceKm:Double,val durationMin:Int,val maneuvers:List<Maneuver),val destinationLat:Double,val destinationLon:Double)
 
 
 private fun loadSearchHistory(context:Context):List<String>{
@@ -752,65 +775,103 @@ private fun saveSearchHistory(context:Context,value:String){
     context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString(PREF_SEARCH_HISTORY,next.joinToString("|")).apply()
 }
 @Composable
-private fun NavigationPlanner(language:Int,sound:Boolean){
+private fun NavigationPlanner(language:Int,sound:Boolean,currentLat:Double?,currentLon:Double?,onOpenMap:()->Unit){
     var destination by rememberSaveable{mutableStateOf("")}
     var loading by remember{mutableStateOf(false)}
     var route by remember{mutableStateOf<RouteResult?>(null)}
     var error by remember{mutableStateOf("")}
+    var expanded by rememberSaveable{mutableStateOf(true)}
     val context=LocalContext.current
     var history by remember{mutableStateOf(loadSearchHistory(context))}
     val scope=rememberCoroutineScope()
     Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
         Column(Modifier.padding(15.dp)){
-            Text("НАВИГАЦИЯ",fontWeight=FontWeight.Black,fontSize=15.sp)
-            Text("точка назначения • маршрут • манёвры",color=MUTED,fontSize=10.sp)
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value=destination,onValueChange={destination=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Куда едем?")},placeholder={Text("Например: аэропорт Грозного")})
-            if(history.isNotEmpty()){
-                Text("ИСТОРИЯ ПОИСКА",fontWeight=FontWeight.Black,fontSize=9.sp,color=MUTED)
-                Spacer(Modifier.height(5.dp));LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){itemsIndexed(history){_,item->AssistChip(onClick={destination=item},label={Text(item,fontSize=9.sp)},leadingIcon={Icon(Icons.Default.History,null,Modifier.size(14.dp))})}}
-                Spacer(Modifier.height(7.dp))
+            Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth()){
+                Column(Modifier.weight(1f)){
+                    Text("НАВИГАЦИЯ",fontWeight=FontWeight.Black,fontSize=16.sp)
+                    Text(if(currentLat!=null)"GPS • маршрут от текущей позиции" else "Маршрут • карта • манёвры",color=MUTED,fontSize=9.sp)
+                }
+                IconButton(onClick={expanded=!expanded}){Icon(if(expanded)Icons.Default.ExpandLess else Icons.Default.ExpandMore,null)}
             }
-            Button({
-                if(destination.isNotBlank()){
-                    loading=true;error=""
-                    scope.launch{
-                        val result=withContext(Dispatchers.IO){buildRoute(destination)}
-                        route=result;loading=false
-                        if(result==null)error="Маршрут не найден или нет сети."
-                        else{saveSearchHistory(context,destination);history=loadSearchHistory(context)}
+            if(expanded){
+                Row(horizontalArrangement=Arrangement.spacedBy(7.dp),modifier=Modifier.fillMaxWidth()){
+                    AssistChip(onClick={destination="Грозный"},label={Text("Грозный",fontSize=9.sp)})
+                    AssistChip(onClick={destination="Аэропорт Грозного"},label={Text("Аэропорт",fontSize=9.sp)})
+                    AssistChip(onClick={destination="Центр Грозного"},label={Text("Центр",fontSize=9.sp)})
+                }
+                Spacer(Modifier.height(7.dp))
+                OutlinedTextField(value=destination,onValueChange={destination=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Куда едем?")},placeholder={Text("Улица, город или место")})
+                if(history.isNotEmpty()){
+                    Text("ПОСЛЕДНИЕ МЕСТА",fontWeight=FontWeight.Black,fontSize=9.sp,color=MUTED,modifier=Modifier.padding(top=7.dp))
+                    LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.padding(top=4.dp)){
+                        itemsIndexed(history){_,item->AssistChip(onClick={destination=item},label={Text(item,fontSize=9.sp)},leadingIcon={Icon(Icons.Default.History,null,Modifier.size(14.dp))})}
                     }
                 }
-            },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){
-                Icon(Icons.Default.Route,null);Spacer(Modifier.width(7.dp));Text(if(loading)"СТРОЮ МАРШРУТ…" else "ПОСТРОИТЬ МАРШРУТ")
-            }
-            if(error.isNotBlank())Text(error,color=RED,fontSize=10.sp)
-            route?.let{r->
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                    SpecCard("ДИСТАНЦИЯ","%.1f км".format(r.distanceKm),CYAN,Modifier.weight(1f))
-                    SpecCard("ВРЕМЯ",r.durationMin.toString()+" мин",GREEN,Modifier.weight(1f))
-                    SpecCard("ШАГИ",r.maneuvers.size.toString(),RED,Modifier.weight(1f))
+                Spacer(Modifier.height(7.dp))
+                Row(horizontalArrangement=Arrangement.spacedBy(7.dp),modifier=Modifier.fillMaxWidth()){
+                    Button(onClick={
+                        if(destination.isNotBlank()){
+                            loading=true;error=""
+                            scope.launch{
+                                val result=withContext(Dispatchers.IO){buildRoute(destination,currentLat?:GROZNY_LAT,currentLon?:GROZNY_LON)}
+                                route=result;loading=false
+                                if(result==null)error="Маршрут не найден. Проверь название места или сеть."
+                                else{saveSearchHistory(context,destination);history=loadSearchHistory(context)}
+                            }
+                        }
+                    },modifier=Modifier.weight(1f),shape=RoundedCornerShape(14.dp)){
+                        Icon(Icons.Default.Route,null);Spacer(Modifier.width(6.dp));Text(if(loading)"СТРОЮ…" else "ПОСТРОИТЬ")
+                    }
+                    OutlinedButton(onClick=onOpenMap,modifier=Modifier.weight(.72f),shape=RoundedCornerShape(14.dp)){
+                        Icon(Icons.Default.Map,null);Spacer(Modifier.width(5.dp));Text("КАРТА")
+                    }
                 }
-                Spacer(Modifier.height(7.dp));Text("МАНЁВРЫ",fontWeight=FontWeight.Black,fontSize=11.sp)
-                r.maneuvers.take(8).forEach{m->
-                    Row(Modifier.fillMaxWidth().padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically){
-                        Text(m.icon,fontSize=18.sp);Spacer(Modifier.width(8.dp))
-                        Column(Modifier.weight(1f)){Text(m.instruction,fontSize=10.sp,fontWeight=FontWeight.Bold);Text(if(m.distance<1000)m.distance.toString()+" м" else "%.1f км".format(m.distance/1000.0),color=MUTED,fontSize=9.sp)}
+                if(error.isNotBlank())Text(error,color=RED,fontSize=10.sp,modifier=Modifier.padding(top=5.dp))
+                route?.let{r->
+                    Spacer(Modifier.height(9.dp))
+                    Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF0A1118)),modifier=Modifier.fillMaxWidth()){
+                        Column(Modifier.padding(12.dp)){
+                            val next=r.maneuvers.firstOrNull()
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Box(Modifier.size(62.dp).clip(RoundedCornerShape(16.dp)).background(CYAN.copy(alpha=.12f)),contentAlignment=Alignment.Center){Text(next?.icon?:"↑",fontSize=34.sp,color=CYAN,fontWeight=FontWeight.Black)}
+                                Spacer(Modifier.width(11.dp))
+                                Column(Modifier.weight(1f)){
+                                    Text("СЛЕДУЮЩИЙ МАНЁВР",color=MUTED,fontSize=8.sp,fontWeight=FontWeight.Black)
+                                    Text(next?.instruction?:"Следуйте по маршруту",fontSize=16.sp,fontWeight=FontWeight.Black)
+                                    Text(if((next?.distance?:0)<1000) "через "+(next?.distance?:0)+" м" else "через %.1f км".format((next?.distance?:0)/1000.0),color=CYAN,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(horizontalArrangement=Arrangement.spacedBy(7.dp),modifier=Modifier.fillMaxWidth()){
+                                SpecCard("МАРШРУТ","%.1f км".format(r.distanceKm),CYAN,Modifier.weight(1f))
+                                SpecCard("В ПУТИ",formatRouteTime(r.durationMin),GREEN,Modifier.weight(1f))
+                                SpecCard("МАНЁВРЫ",r.maneuvers.size.toString(),RED,Modifier.weight(1f))
+                            }
+                            Spacer(Modifier.height(8.dp));Text("ПЛАН МАРШРУТА",fontWeight=FontWeight.Black,fontSize=9.sp,color=MUTED)
+                            r.maneuvers.take(10).forEachIndexed{index,m->
+                                Row(Modifier.fillMaxWidth().padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically){
+                                    Box(Modifier.size(27.dp).clip(RoundedCornerShape(9.dp)).background(if(index==0)CYAN.copy(alpha=.16f) else PANEL),contentAlignment=Alignment.Center){Text((index+1).toString(),fontSize=9.sp,fontWeight=FontWeight.Black,color=if(index==0)CYAN else MUTED)}
+                                    Spacer(Modifier.width(7.dp));Text(m.icon,fontSize=17.sp);Spacer(Modifier.width(7.dp))
+                                    Column(Modifier.weight(1f)){Text(m.instruction,fontSize=10.sp,fontWeight=FontWeight.Bold);Text(if(m.distance<1000)m.distance.toString()+" м" else "%.1f км".format(m.distance/1000.0),color=MUTED,fontSize=8.sp)}
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
+private fun formatRouteTime(minutes:Int):String=if(minutes>=60)minutes/60.toString()+" ч "+(minutes%60)+" мин" else "$minutes мин"
 
-private fun buildRoute(query:String):RouteResult? = runCatching{
+
+private fun buildRoute(query:String,originLat:Double,originLon:Double):RouteResult? = runCatching{
     val gConn=URL("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+Uri.encode(query)).openConnection() as HttpURLConnection
     gConn.setRequestProperty("User-Agent","TerekDrive/1.3");gConn.connectTimeout=7000;gConn.readTimeout=7000
     val g=JSONArray(gConn.inputStream.bufferedReader().use{it.readText()});gConn.disconnect()
     if(g.length()==0)return@runCatching null
     val lat=g.getJSONObject(0).getDouble("lat");val lon=g.getJSONObject(0).getDouble("lon")
-    val c=URL("https://router.project-osrm.org/route/v1/driving/45.6985,43.3178;$lon,$lat?overview=false&steps=true").openConnection() as HttpURLConnection
+    val c=URL("https://router.project-osrm.org/route/v1/driving/$originLon,$originLat;$lon,$lat?overview=false&steps=true").openConnection() as HttpURLConnection
     c.setRequestProperty("User-Agent","TerekDrive/1.3");c.connectTimeout=8000;c.readTimeout=8000
     val root=JSONObject(c.inputStream.bufferedReader().use{it.readText()});c.disconnect()
     val rr=root.getJSONArray("routes").getJSONObject(0);val steps=rr.getJSONArray("legs").getJSONObject(0).getJSONArray("steps");val list=mutableListOf<Maneuver>()
@@ -822,7 +883,7 @@ private fun buildRoute(query:String):RouteResult? = runCatching{
             list.add(Maneuver(text,dist,icon))
         }
     }
-    RouteResult(rr.getDouble("distance")/1000.0,(rr.getDouble("duration")/60.0).toInt(),list)
+    RouteResult(rr.getDouble("distance")/1000.0,(rr.getDouble("duration")/60.0).toInt(),list,lat,lon)
 }.getOrNull()
 
 @Composable
