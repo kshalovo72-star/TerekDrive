@@ -17,6 +17,7 @@ public class TerekDriveCockpit : MonoBehaviour
     void Start()
     {
         Application.targetFrameRate = 60;
+        BuildCamera();
         BuildWorld();
     }
 
@@ -28,6 +29,23 @@ public class TerekDriveCockpit : MonoBehaviour
 
         UpdateGauge();
         UpdateParticles();
+    }
+
+    void BuildCamera()
+    {
+        var existing = Camera.main;
+        if (existing != null) return;
+
+        var go = new GameObject("Main Camera");
+        var camera = go.AddComponent<Camera>();
+        go.tag = "MainCamera";
+        go.transform.position = new Vector3(0f, 0.2f, -8f);
+        go.transform.LookAt(new Vector3(0f, 0f, 1.7f));
+        camera.fieldOfView = 48f;
+        camera.nearClipPlane = 0.03f;
+        camera.farClipPlane = 60f;
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = new Color(0.003f, 0.005f, 0.009f);
     }
 
     void BuildWorld()
