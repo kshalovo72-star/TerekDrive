@@ -474,7 +474,8 @@ class SeasonPainter extends CustomPainter {
       for (var x = 0.0; x <= size.width; x += 28) {
         snow.lineTo(x, size.height - 22 - math.sin(x * .035) * 7 - math.sin(x * .09) * 3);
       }
-      snow.lineTo(size.width, size.height)..close();
+      snow.lineTo(size.width, size.height);
+      snow.close();
       p.color = Colors.white.withValues(alpha: .16);
       canvas.drawPath(snow, p);
       p.color = Colors.white.withValues(alpha: .07);
