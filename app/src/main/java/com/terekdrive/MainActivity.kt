@@ -11,8 +11,10 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.AudioAttributes
+import android.media.AudioFormat
 import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.AudioTrack
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -146,20 +148,43 @@ class MainActivity:ComponentActivity(){
         requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         createUpdateChannel(this)
         setContent{TerekDrive()}
-        playStartupSound(this)
     }
 }
 
 
 private fun playStartupSound(context:Context){
     runCatching{
-        val tg=ToneGenerator(AudioManager.STREAM_MUSIC,85)
-        Thread{
-            try{tg.startTone(ToneGenerator.TONE_PROP_BEEP2,90);Thread.sleep(110);tg.startTone(ToneGenerator.TONE_PROP_ACK,110);Thread.sleep(130);tg.startTone(ToneGenerator.TONE_PROP_BEEP,180)}
-            finally{tg.release()}
-        }.start()
+        val sampleRate=44100
+        val notes=listOf(523.25,659.25,783.99,1046.50)
+        val noteMs=105
+        val gapMs=22
+        val totalSamples=notes.size*(noteMs+gapMs)*sampleRate/1000
+        val data=ShortArray(totalSamples)
+        var cursor=0
+        for(freq in notes){
+            val n=noteMs*sampleRate/1000
+            for(i in 0 until n){
+                val t=i.toDouble()/sampleRate
+                val attack=(i.toDouble()/(sampleRate*.012)).coerceAtMost(1.0)
+                val release=((n-i).toDouble()/(sampleRate*.045)).coerceAtMost(1.0)
+                val env=minOf(attack,release)
+                val wave=sin(2.0*Math.PI*freq*t)+.22*sin(2.0*Math.PI*freq*2.0*t)
+                data[cursor+i]=(Short.MAX_VALUE*.20*env*wave).toInt().toShort()
+            }
+            cursor+=n+gapMs*sampleRate/1000
+        }
+        val track=AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+            .setBufferSizeInBytes(data.size*2)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
+        track.write(data,0,data.size)
+        track.play()
+        Thread{Thread.sleep(650);runCatching{track.stop();track.release()}}.start()
     }
 }
+
 private data class WeatherState(val temp:Double,val feels:Double,val wind:Double,val humidity:Int,val code:Int)
 private fun weatherText(code:Int)=when(code){0->"Ясно";1,2->"Переменная облачность";3->"Пасмурно";45,48->"Туман";51,53,55->"Морось";61,63,65,80,81,82->"Дождь";71,73,75,77,85,86->"Снег";95,96,99->"Гроза";else->"Погода"}
 private fun weatherIcon(code:Int)=when(code){0->"☀";1,2->"⛅";3->"☁";45,48->"🌫";51,53,55,61,63,65,80,81,82->"🌧";71,73,75,77,85,86->"❄";95,96,99->"⛈";else->"🌤"}
@@ -206,6 +231,7 @@ private fun TerekDrive(){
     val context=LocalContext.current
     val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
     LaunchedEffect(Unit){
+        if(sound) playStartupSound(context)
         if(Build.VERSION.SDK_INT>=33 &&
             ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -680,10 +706,7 @@ private fun MapScreen(season:Season){
                                         selected=place
                                         results=emptyList()
                                         mapRef?.animateCamera(
-                                            CameraPosition.Builder()
-                                                .target(LatLng(place.lat,place.lon))
-                                                .zoom(11.5)
-                                                .build()
+                                            CameraUpdateFactory.newLatLngZoom(LatLng(place.lat,place.lon),11.5)
                                         )
                                         status="Выбран: "+place.name.substringBefore(",")
                                     }
@@ -1119,6 +1142,14 @@ private fun NavigationPlanner(language:Int,sound:Boolean,currentLat:Double?,curr
                     AssistChip(onClick={destination="Центр Грозного"},label={Text("Центр",fontSize=9.sp)})
                 }
                 Spacer(Modifier.height(7.dp))
+                Text("БЫСТРЫЕ ДЕЙСТВИЯ",fontWeight=FontWeight.Black,fontSize=9.sp,color=MUTED)
+                Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top=4.dp)){
+                    AssistChip(onClick={destination="Ближайшая заправка"},label={Text("⛽ Заправка",fontSize=9.sp)})
+                    AssistChip(onClick={destination="Ближайшая автомойка"},label={Text("🚿 Автомойка",fontSize=9.sp)})
+                    AssistChip(onClick={destination="Ближайшая парковка"},label={Text("🅿 Парковка",fontSize=9.sp)})
+                    AssistChip(onClick={destination="Ближайшая шиномонтажная мастерская"},label={Text("🔧 Сервис",fontSize=9.sp)})
+                }
+                Spacer(Modifier.height(7.dp))
                 OutlinedTextField(value=destination,onValueChange={destination=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Куда едем?")},placeholder={Text("Улица, город или место")})
                 if(history.isNotEmpty()){
                     Text("ПОСЛЕДНИЕ МЕСТА",fontWeight=FontWeight.Black,fontSize=9.sp,color=MUTED,modifier=Modifier.padding(top=7.dp))
@@ -1181,6 +1212,15 @@ private fun NavigationPlanner(language:Int,sound:Boolean,currentLat:Double?,curr
         }
     }
 }
+@Composable
+private fun SpecCard(title:String,value:String,accent:Color,modifier:Modifier=Modifier){
+    Column(modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF0F161D)).padding(9.dp),horizontalAlignment=Alignment.CenterHorizontally){
+        Text(title,color=MUTED,fontSize=7.sp,fontWeight=FontWeight.Black)
+        Spacer(Modifier.height(3.dp))
+        Text(value,color=accent,fontSize=13.sp,fontWeight=FontWeight.Black)
+    }
+}
+
 private fun formatRouteTime(minutes:Int):String=if(minutes>=60)(minutes/60).toString()+" ч "+(minutes%60)+" мин" else minutes.toString()+" мин"
 
 
