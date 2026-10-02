@@ -1,0 +1,22 @@
+name: terek_drive
+description: Тerek Drive — автомобильный навигационный комбайн.
+publish_to: "none"
+version: 2.4.0+15
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  maplibre_gl: ^0.20.0
+  geolocator: ^13.0.2
+  flutter_tts: ^4.2.0
+  shared_preferences: ^2.3.4
+  http: ^1.2.2
+  url_launcher: ^6.3.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+flutter:
+  uses-material-design: true
