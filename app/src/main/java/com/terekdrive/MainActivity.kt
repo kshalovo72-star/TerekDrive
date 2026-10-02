@@ -66,6 +66,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.toArgb
@@ -1038,7 +1040,7 @@ private fun GarageScreen(season:Season){
         Spacer(Modifier.height(10.dp))
         Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
             Column(Modifier.padding(16.dp)){
-                CarVisual(car,Modifier.fillMaxWidth().height(155.dp),season.accent)
+                CarVisual(car,Modifier.fillMaxWidth().height(205.dp),season.accent)
                 Spacer(Modifier.height(8.dp));Text(car.name,fontSize=24.sp,fontWeight=FontWeight.Black)
                 Text(car.type+" • "+car.drive,color=season.accent,fontWeight=FontWeight.Bold)
                 Text("Подготовлена для DRIVE режима",color=MUTED,fontSize=10.sp)
@@ -1049,7 +1051,7 @@ private fun GarageScreen(season:Season){
             itemsIndexed(cars){i,c->
                 Column(Modifier.width(170.dp).clip(RoundedCornerShape(20.dp)).background(if(i==selected)season.accent.copy(alpha=.12f) else PANEL)
                     .border(1.dp,if(i==selected)season.accent else Color(0xFF252C34),RoundedCornerShape(20.dp)).clickable{selected=i}.padding(11.dp)){
-                    CarVisual(c,Modifier.fillMaxWidth().height(85.dp),season.accent)
+                    CarVisual(c,Modifier.fillMaxWidth().height(112.dp),season.accent)
                     Spacer(Modifier.height(7.dp));Text(c.name,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(c.hp.toString()+" л.с. • "+c.top+" км/ч",color=MUTED,fontSize=10.sp)
                 }
             }
@@ -1069,207 +1071,64 @@ private fun GarageScreen(season:Season){
     }
 }
 
+private fun carPhotoUrl(car:Car):String=when{
+    car.name.contains("Mercedes",true)->"https://images.unsplash.com/photo-1676118497332-94ad05a7c3cf?auto=format&fit=crop&w=1200&q=82"
+    car.name.contains("Lamborghini",true)->"https://images.squarespace-cdn.com/content/v1/6724111128709809c6a40d15/0ba5fde6-cce0-4314-8e56-88d4632bcde6/white%2Bhuracan%2Bfront%2Bside.jpeg"
+    else->"https://images.unsplash.com/photo-1606221791496-ca89dbedb427?auto=format&fit=crop&w=1400&q=84"
+}
+
 @Composable
 private fun CarVisual(car:Car,modifier:Modifier,accent:Color){
-    Canvas(modifier.clip(RoundedCornerShape(18.dp))){
-        // Photorealistic tuning-garage environment inspired by the reference photo.
-        drawRect(Brush.verticalGradient(listOf(Color(0xFF171C22),Color(0xFF090B0F),Color(0xFF050608))))
-        val floorTop=size.height*.64f
-        drawRect(Color(0xFF171A1F),topLeft=Offset(0f,floorTop),size=androidx.compose.ui.geometry.Size(size.width,size.height-floorTop))
-        for(i in 0..7){
-            val x=i*size.width/7f
-            drawLine(Color.White.copy(alpha=.035f),Offset(x,floorTop),Offset(size.width*.5f+(x-size.width*.5f)*1.45f,size.height),3f)
-        }
-        // Ceiling strip lights and warm workshop accents.
-        drawRoundRect(Color.White.copy(alpha=.85f),Offset(size.width*.08f,size.height*.08f),androidx.compose.ui.geometry.Size(size.width*.22f,5f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(3f,3f))
-        drawRoundRect(Color.White.copy(alpha=.72f),Offset(size.width*.39f,size.height*.05f),androidx.compose.ui.geometry.Size(size.width*.23f,5f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(3f,3f))
-        drawRoundRect(Color.White.copy(alpha=.70f),Offset(size.width*.70f,size.height*.10f),androidx.compose.ui.geometry.Size(size.width*.20f,5f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(3f,3f))
-        drawLine(Color(0xFFFFA45B).copy(alpha=.45f),Offset(size.width*.05f,size.height*.42f),Offset(size.width*.05f,size.height*.78f),6f)
-        drawLine(Color(0xFFFFA45B).copy(alpha=.35f),Offset(size.width*.95f,size.height*.40f),Offset(size.width*.95f,size.height*.78f),6f)
-        // Garage wall panels / service bay.
-        drawRect(Color.Black.copy(alpha=.18f),topLeft=Offset(size.width*.07f,size.height*.18f),size=androidx.compose.ui.geometry.Size(size.width*.86f,size.height*.42f))
-        for(i in 0..9){
-            val y=size.height*(.20f+i*.038f)
-            drawLine(Color.White.copy(alpha=.018f),Offset(size.width*.08f,y),Offset(size.width*.92f,y),1f)
-        }
-        // Large logo silhouette behind the car.
-        val logoY=size.height*.31f
-        drawLine(Color.White.copy(alpha=.10f),Offset(size.width*.40f,logoY),Offset(size.width*.50f,logoY-size.height*.07f),4f)
-        drawLine(Color.White.copy(alpha=.10f),Offset(size.width*.50f,logoY-size.height*.07f),Offset(size.width*.60f,logoY),4f)
-        drawLine(Color.White.copy(alpha=.10f),Offset(size.width*.43f,logoY-size.height*.025f),Offset(size.width*.57f,logoY-size.height*.025f),3f)
-        drawRect(Color.White.copy(alpha=.035f),topLeft=Offset(size.width*.34f,size.height*.36f),size=androidx.compose.ui.geometry.Size(size.width*.32f,3f))
-
-        val cx=size.width*.50f
-        val groundY=size.height*.77f
-        val suv=car.type=="SUV"
-        val supercar=car.type=="SUPER"
-        val muscle=car.type=="MUSCLE"
-        val bodyScale=when{supercar->.96f;suv->1.04f;muscle->1.02f;else->1f}
-        val w=size.width*.78f*bodyScale
-        val h=size.height*.52f*bodyScale
-        val left=cx-w*.50f
-        val right=cx+w*.50f
-        val top=groundY-h*.86f
-
-        val bodyColor=when{
-            car.name.contains("BMW")->Color(0xFF123FBE)
-            car.name.contains("Mercedes")->Color(0xFF171B20)
-            car.name.contains("Audi")->Color(0xFF5A0E12)
-            car.name.contains("Supra")->Color(0xFFFF7A18)
-            car.name.contains("Lamborghini")->Color(0xFFFFB300)
-            car.name.contains("Porsche")->Color(0xFF111316)
-            car.name.contains("Range Rover")->Color(0xFF30352F)
-            car.name.contains("Mustang")->Color(0xFF6B1015)
-            car.name.contains("Lexus")->Color(0xFFE7E9EA)
-            else->Color(0xFF2D3037)
-        }
-        val dark=Color(0xFF07090C)
-        val glass=Color(0xFF07131D)
-        val chrome=Color(0xFFB9C3CC)
-
-        // Soft showroom/road reflection, like a real car photo.
-        drawOval(
-            color=Color.Black.copy(alpha=.78f),
-            topLeft=Offset(left-w*.06f,groundY-h*.01f),
-            size=androidx.compose.ui.geometry.Size(w*1.12f,h*.20f)
+    Box(modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF07090C))){
+        AsyncImage(
+            model=carPhotoUrl(car),
+            contentDescription=car.name,
+            contentScale=ContentScale.Crop,
+            modifier=Modifier.fillMaxSize()
         )
-        drawOval(
-            brush=Brush.radialGradient(listOf(Color.White.copy(alpha=.10f),Color.Transparent)),
-            topLeft=Offset(cx-w*.35f,groundY-h*.15f),
-            size=androidx.compose.ui.geometry.Size(w*.70f,h*.22f)
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(Color(0x6605080C),Color.Transparent,Color(0xD907090C))
+                )
+            )
         )
-
-        // Main front 3/4 body silhouette.
-        val body=Path().apply{
-            moveTo(left+w*.035f,groundY-h*.05f)
-            cubicTo(left+w*.05f,groundY-h*.27f,left+w*.13f,groundY-h*.43f,left+w*.28f,groundY-h*.51f)
-            lineTo(left+w*.37f,top+h*.08f)
-            cubicTo(left+w*.48f,top,left+w*.67f,top+h*.01f,left+w*.78f,top+h*.17f)
-            cubicTo(left+w*.91f,top+h*.29f,right-w*.02f,groundY-h*.20f,right,groundY-h*.02f)
-            lineTo(right-w*.035f,groundY+h*.06f)
-            cubicTo(right-w*.14f,groundY+h*.13f,right-w*.28f,groundY+h*.12f,right-w*.38f,groundY+h*.10f)
-            lineTo(left+w*.13f,groundY+h*.11f)
-            cubicTo(left+w*.07f,groundY+h*.08f,left+w*.03f,groundY+h*.03f,left+w*.035f,groundY-h*.05f)
-            close()
+        Box(
+            Modifier.align(Alignment.TopStart).padding(10.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xB3070A0E))
+                .border(1.dp,Color.White.copy(alpha=.10f),RoundedCornerShape(10.dp))
+                .padding(horizontal=8.dp,vertical=5.dp)
+        ){
+            Text(
+                "PHOTO GARAGE • ${car.type}",
+                color=Color.White.copy(alpha=.88f),
+                fontSize=8.sp,
+                fontWeight=FontWeight.Black,
+                letterSpacing=.6.sp
+            )
         }
-        drawPath(body,Brush.linearGradient(
-            listOf(bodyColor.copy(alpha=.98f),bodyColor.copy(alpha=.72f),dark),
-            start=Offset(left,top),end=Offset(right,groundY)
-        ))
-        drawPath(body,Color.White.copy(alpha=.08f),style=Stroke(width=1.2f))
-
-        // Shoulder reflection and metallic highlight.
-        val shoulder=Path().apply{
-            moveTo(left+w*.08f,groundY-h*.28f)
-            cubicTo(left+w*.30f,groundY-h*.49f,left+w*.61f,groundY-h*.47f,right-w*.05f,groundY-h*.25f)
-            cubicTo(left+w*.65f,groundY-h*.32f,left+w*.35f,groundY-h*.30f,left+w*.10f,groundY-h*.15f)
-            close()
-        }
-        drawPath(shoulder,Brush.linearGradient(
-            listOf(Color.White.copy(alpha=.32f),Color.White.copy(alpha=.06f),Color.Transparent),
-            start=Offset(left,top),end=Offset(right,groundY)
-        ))
-
-        // Cabin with realistic dark glass.
-        val cabin=Path().apply{
-            moveTo(left+w*.28f,groundY-h*.44f)
-            cubicTo(left+w*.36f,top+h*.17f,left+w*.48f,top+h*.02f,left+w*.61f,top+h*.05f)
-            cubicTo(left+w*.72f,top+h*.07f,left+w*.80f,top+h*.19f,left+w*.83f,groundY-h*.36f)
-            lineTo(left+w*.72f,groundY-h*.34f)
-            cubicTo(left+w*.64f,top+h*.14f,left+w*.50f,top+h*.11f,left+w*.40f,groundY-h*.32f)
-            close()
-        }
-        drawPath(cabin,Brush.linearGradient(listOf(Color(0xFF05080C),glass,Color(0xFF132938)),start=Offset(cx,top),end=Offset(cx,groundY)))
-        drawPath(cabin,Color.White.copy(alpha=.12f),style=Stroke(width=1.5f))
-
-        // Windshield reflection.
-        drawPath(Path().apply{
-            moveTo(left+w*.39f,top+h*.15f)
-            lineTo(left+w*.58f,top+h*.08f)
-            lineTo(left+w*.73f,top+h*.18f)
-            lineTo(left+w*.63f,top+h*.22f)
-            close()
-        },Color.White.copy(alpha=.20f))
-
-        // Hood plane.
-        val hood=Path().apply{
-            moveTo(left+w*.18f,groundY-h*.20f)
-            cubicTo(left+w*.34f,groundY-h*.32f,left+w*.62f,groundY-h*.31f,right-w*.10f,groundY-h*.17f)
-            lineTo(right-w*.03f,groundY-h*.02f)
-            lineTo(left+w*.05f,groundY-h*.02f)
-            close()
-        }
-        drawPath(hood,Brush.linearGradient(listOf(bodyColor.copy(alpha=.95f),Color.White.copy(alpha=.08f),bodyColor.copy(alpha=.65f)),start=Offset(left,groundY-h*.3f),end=Offset(right,groundY)))
-
-        // Front grille.
-        val grille=Path().apply{
-            moveTo(cx-w*.18f,groundY-h*.035f)
-            cubicTo(cx-w*.08f,groundY-h*.08f,cx+w*.08f,groundY-h*.08f,cx+w*.20f,groundY-h*.025f)
-            lineTo(cx+w*.16f,groundY+h*.045f)
-            lineTo(cx-w*.15f,groundY+h*.045f)
-            close()
-        }
-        drawPath(grille,dark)
-        for(i in 0..6){
-            val gx=cx-w*.13f+i*w*.043f
-            drawLine(chrome.copy(alpha=.42f),Offset(gx,groundY-h*.025f),Offset(gx-w*.005f,groundY+h*.035f),1.1f)
-        }
-        drawLine(Color.Black,Offset(cx,groundY-h*.025f),Offset(cx,groundY+h*.04f),2f)
-
-        // Aggressive lower air intakes.
-        drawRoundRect(dark,Offset(left+w*.12f,groundY+h*.015f),androidx.compose.ui.geometry.Size(w*.17f,h*.075f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(10f,10f))
-        drawRoundRect(dark,Offset(right-w*.27f,groundY+h*.015f),androidx.compose.ui.geometry.Size(w*.17f,h*.075f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(10f,10f))
-
-        // LED headlights with separate light signatures.
-        val lampY=groundY-h*.10f
-        val lampW=w*.19f
-        val lampH=h*.075f
-        val lampBrush=Brush.linearGradient(listOf(Color.White,Color(0xFFD9F2FF),Color(0xFFB8D9E8)))
-        drawRoundRect(lampBrush,Offset(left+w*.10f,lampY),androidx.compose.ui.geometry.Size(lampW,lampH),cornerRadius=androidx.compose.ui.geometry.CornerRadius(12f,12f))
-        drawRoundRect(lampBrush,Offset(right-w*.29f,lampY),androidx.compose.ui.geometry.Size(lampW,lampH),cornerRadius=androidx.compose.ui.geometry.CornerRadius(12f,12f))
-        for(i in 0..2){
-            drawLine(Color(0xFF5B6670),Offset(left+w*(.125f+i*.045f),lampY+h*.02f),Offset(left+w*(.145f+i*.045f),lampY+h*.055f),2f)
-            drawLine(Color(0xFF5B6670),Offset(right-w*(.255f-i*.045f),lampY+h*.02f),Offset(right-w*(.235f-i*.045f),lampY+h*.055f),2f)
-        }
-
-        // Wheels: layered tire, sidewall, machined rim and spokes.
-        val wheelY=groundY+h*.07f
-        val wheelR=h*.225f
-        listOf(left+w*.20f,right-w*.17f).forEachIndexed{idx,wx->
-            drawCircle(Color.Black.copy(alpha=.55f),wheelR*1.10f,Offset(wx,wheelY+3f))
-            drawCircle(Color(0xFF020305),wheelR,Offset(wx,wheelY))
-            drawCircle(Color(0xFF22272D),wheelR*.78f,Offset(wx,wheelY))
-            drawCircle(chrome, wheelR*.57f,Offset(wx,wheelY))
-            drawCircle(Color(0xFF15191E),wheelR*.46f,Offset(wx,wheelY))
-            for(i in 0 until 10){
-                val a=Math.toRadians(i*36.0+if(idx==0)8.0 else -8.0)
-                val x1=wx+cos(a).toFloat()*wheelR*.10f
-                val y1=wheelY+sin(a).toFloat()*wheelR*.10f
-                val x2=wx+cos(a+.18).toFloat()*wheelR*.49f
-                val y2=wheelY+sin(a+.18).toFloat()*wheelR*.49f
-                drawLine(Color(0xFFD5DADF),Offset(x1,y1),Offset(x2,y2),2f,StrokeCap.Round)
+        Row(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(11.dp),
+            verticalAlignment=Alignment.Bottom
+        ){
+            Column(Modifier.weight(1f)){
+                Text(car.name,fontSize=17.sp,fontWeight=FontWeight.Black,color=Color.White)
+                Text(
+                    "${car.hp} л.с. • ${car.top} км/ч • ${car.drive}",
+                    color=Color.White.copy(alpha=.78f),
+                    fontSize=9.sp,
+                    fontWeight=FontWeight.Bold
+                )
             }
-            drawCircle(Color(0xFF07090C),wheelR*.15f,Offset(wx,wheelY))
-            drawCircle(accent.copy(alpha=.85f),wheelR*.07f,Offset(wx,wheelY))
+            Box(
+                Modifier.size(34.dp).clip(RoundedCornerShape(11.dp))
+                    .background(accent.copy(alpha=.88f)),
+                contentAlignment=Alignment.Center
+            ){
+                Icon(Icons.Default.DirectionsCar,null,tint=Color.Black,modifier=Modifier.size(19.dp))
+            }
         }
-
-        // Side skirt, bumper edge and paint reflections.
-        drawLine(Color.Black.copy(alpha=.85f),Offset(left+w*.08f,groundY+h*.085f),Offset(right-w*.05f,groundY+h*.085f),4f)
-        drawLine(Color.White.copy(alpha=.17f),Offset(left+w*.10f,groundY-h*.22f),Offset(right-w*.10f,groundY-h*.16f),2.4f,StrokeCap.Round)
-        drawLine(accent.copy(alpha=.72f),Offset(left+w*.08f,groundY+h*.055f),Offset(right-w*.08f,groundY+h*.055f),1.5f)
-
-        // Small badge and model label.
-        drawCircle(chrome,9f,Offset(cx,groundY-h*.14f))
-        drawCircle(dark,5f,Offset(cx,groundY-h*.14f))
-        val namePaint=android.graphics.Paint().apply{
-            isAntiAlias=true
-            color=Color.White.toArgb()
-            textAlign=android.graphics.Paint.Align.CENTER
-            textSize=11f
-            typeface=android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD)
-            setShadowLayer(5f,0f,2f,Color.Black.toArgb())
-        }
-        drawContext.canvas.nativeCanvas.drawText(car.name.uppercase(),cx,size.height*.95f,namePaint)
     }
 }
 @Composable
