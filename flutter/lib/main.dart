@@ -283,7 +283,7 @@ class _SpeedPageState extends State<SpeedPage> with SingleTickerProviderStateMix
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final d = math.min(constraints.maxWidth - 22, constraints.maxHeight - 22).clamp(280.0, 430.0);
+                    final d = math.min(constraints.maxWidth - 22, constraints.maxHeight - 22).clamp(280.0, 430.0).toDouble();
                     return Center(
                       child: AnimatedBuilder(
                         animation: controller,
