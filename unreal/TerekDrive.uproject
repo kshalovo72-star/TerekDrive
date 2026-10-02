@@ -1,0 +1,9 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.8",
+  "Category": "Games",
+  "Description": "Terek Drive — high-fidelity mobile cockpit prototype",
+  "Modules": [
+    {"Name":"TerekDrive","Type":"Runtime","LoadingPhase":"Default"}
+  ]
+}
