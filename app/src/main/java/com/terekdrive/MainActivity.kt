@@ -80,6 +80,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
@@ -707,7 +708,7 @@ private fun MapScreen(season:Season){
                                         selected=place
                                         results=emptyList()
                                         mapRef?.animateCamera(
-                                            CameraPosition.Builder().target(LatLng(place.lat,place.lon)).zoom(11.5).build()
+                                            CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(LatLng(place.lat,place.lon)).zoom(11.5).build())
                                         )
                                         status="Выбран: "+place.name.substringBefore(",")
                                     }
