@@ -1,6 +1,6 @@
 {
-  "version": 11,
-  "message": "Терек Драйв 2.0: фотореалистичный гараж с настоящими фото машин.",
+  "version": 12,
+  "message": "Терек Драйв 2.1: отдельные вкладки карты, навигации, скорости, гаража и настроек.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
@@ -18,5 +18,8 @@
   "gps_route_origin": true,
   "quick_navigation": true,
   "speedometer_live": true,
-  "speed_redline_effects": true
+  "speed_redline_effects": true,
+  "garage_cars": 3,
+  "navigation_tab": true,
+  "speed_tab": true
 }
