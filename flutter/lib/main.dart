@@ -6,76 +6,17 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:maplibre_gl/mapbox_gl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const bg=Color(0xFF07090C), panel=Color(0xFF10151B), red=Color(0xFFFF3B30), cyan=Color(0xFF00D9FF), green=Color(0xFF00E5A0);
-
+const bg=Color(0xFF07090C),panel=Color(0xFF10151B),red=Color(0xFFFF3B30),cyan=Color(0xFF00D9FF),green=Color(0xFF00E5A0);
 void main()=>runApp(const TerekDriveApp());
-
-class TerekDriveApp extends StatelessWidget{
- const TerekDriveApp({super.key});
- Widget build(BuildContext c)=>MaterialApp(debugShowCheckedModeBanner:false,title:'Терек Драйв',
- theme:ThemeData.dark(useMaterial3:true).copyWith(scaffoldBackgroundColor:bg,colorScheme:const ColorScheme.dark(primary:red,secondary:cyan)),
- home:const DriveShell());
-}
-
+class TerekDriveApp extends StatelessWidget{const TerekDriveApp({super.key});Widget build(BuildContext c)=>MaterialApp(debugShowCheckedModeBanner:false,title:'Терек Драйв',theme:ThemeData.dark(useMaterial3:true).copyWith(scaffoldBackgroundColor:bg,colorScheme:const ColorScheme.dark(primary:red,secondary:cyan)),home:const DriveShell());}
 class DriveShell extends StatefulWidget{const DriveShell({super.key});State<DriveShell> createState()=>_DriveShellState();}
-class _DriveShellState extends State<DriveShell>{
- int tab=0; Position? pos; StreamSubscription<Position>? gps; bool sound=true,tracking=false; final tts=FlutterTts();
- void initState(){super.initState();_load();}
- Future<void> _load()async{final p=await SharedPreferences.getInstance();setState(()=>sound=p.getBool('sound')??true);}
- Future<void> _gps()async{
-  if(!await Geolocator.isLocationServiceEnabled())return;
-  var q=await Geolocator.checkPermission(); if(q==LocationPermission.denied)q=await Geolocator.requestPermission();
-  if(q==LocationPermission.denied||q==LocationPermission.deniedForever)return;
-  await gps?.cancel();
-  gps=Geolocator.getPositionStream(locationSettings:const LocationSettings(accuracy:LocationAccuracy.best,distanceFilter:2)).listen((p)=>setState(()=>pos=p));
-  setState(()=>tracking=true);
- }
- Future<void> _sound()async{final p=await SharedPreferences.getInstance();sound=!sound;await p.setBool('sound',sound);setState((){});}
- void dispose(){gps?.cancel();tts.stop();super.dispose();}
- Widget build(BuildContext c){
-  final pages=[MapPage(position:pos,onLocate:_gps),NavigationPage(position:pos,tts:tts,sound:sound),SpeedPage(position:pos,tracking:tracking,onStart:_gps),SettingsPage(sound:sound,onSound:_sound)];
-  return Scaffold(body:SafeArea(child:pages[tab]),bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(i)=>setState(()=>tab=i),destinations:const[
-   NavigationDestination(icon:Icon(Icons.map_outlined),selectedIcon:Icon(Icons.map),label:'Карта'),
-   NavigationDestination(icon:Icon(Icons.navigation_outlined),selectedIcon:Icon(Icons.navigation),label:'Навигация'),
-   NavigationDestination(icon:Icon(Icons.speed_outlined),selectedIcon:Icon(Icons.speed),label:'Скорость'),
-   NavigationDestination(icon:Icon(Icons.settings_outlined),selectedIcon:Icon(Icons.settings),label:'Настройки'),
-  ]));
- }
-}
-
-class MapPage extends StatefulWidget{final Position? position;final VoidCallback onLocate;const MapPage({super.key,this.position,required this.onLocate});State<MapPage> createState()=>_MapPageState();}
-class _MapPageState extends State<MapPage>{MapLibreMapController? map;static const home=LatLng(43.3178,45.6985);
- Widget build(BuildContext c)=>Stack(children:[
-  MapLibreMap(styleString:'https://tiles.openfreemap.org/styles/liberty',initialCameraPosition:const CameraPosition(target:home,zoom:10),myLocationEnabled:true,onMapCreated:(x)=>map=x),
-  Positioned(top:12,left:12,right:12,child:const Header('ТЕРЕК ДРАЙВ','MAP / FLUTTER ENGINE')),
-  Positioned(bottom:18,right:16,child:FloatingActionButton(backgroundColor:red,onPressed:(){onLocate();if(widget.position!=null)map?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(widget.position!.latitude,widget.position!.longitude),14));},child:const Icon(Icons.my_location)))
- ]);}
-}
-
-class NavigationPage extends StatelessWidget{final Position? position;final FlutterTts tts;final bool sound;const NavigationPage({super.key,this.position,required this.tts,required this.sound});
- Future<void> say(String s)async{if(!sound)return;await tts.setLanguage('ru-RU');await tts.setSpeechRate(.48);await tts.speak(s);}
- Widget build(BuildContext c)=>ListView(padding:const EdgeInsets.all(16),children:[
-  const Header('НАВИГАЦИЯ','ROUTE CONTROL / ГЕНА'),const SizedBox(height:18),
-  TextField(decoration:InputDecoration(labelText:'Куда едем?',prefixIcon:const Icon(Icons.search),filled:true,fillColor:panel,border:OutlineInputBorder(borderRadius:BorderRadius.circular(14)))),
-  const SizedBox(height:14),Row(children:[Expanded(child:ActionCard('⛽','Заправка',()=>say('Ищу заправку'))),const SizedBox(width:8),Expanded(child:ActionCard('🅿','Парковка',()=>say('Ищу парковку')))]),
-  const SizedBox(height:8),Row(children:[Expanded(child:ActionCard('🚿','Автомойка',()=>say('Ищу автомойку'))),const SizedBox(width:8),Expanded(child:ActionCard('🔧','Сервис',()=>say('Ищу сервис')))]),
-  const SizedBox(height:20),Card(color:panel,child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-   const Text('МАРШРУТ',style:TextStyle(color:cyan,fontWeight:FontWeight.bold)),const SizedBox(height:8),
-   Text(position==null?'GPS не подключён':'GPS подключён'),const SizedBox(height:14),
-   Row(children:[Expanded(child:FilledButton(onPressed:(){},child:const Text('ПОСТРОИТЬ'))),const SizedBox(width:8),Expanded(child:OutlinedButton(onPressed:(){},child:const Text('СОХРАНИТЬ')))])
-  ])))
- ]);}
-}
-
-class SpeedPage extends StatelessWidget{final Position? position;final bool tracking;final VoidCallback onStart;const SpeedPage({super.key,this.position,required this.tracking,required this.onStart});
- Widget build(BuildContext c){final v=position==null?0.0:position!.speed*3.6;return Column(children:[const SizedBox(height:18),const Header('SPEED','GPS LIVE / 300 KM/H'),Expanded(child:Center(child:CustomPaint(size:const Size(330,330),painter:GaugePainter(0)))),Text(v.round().toString(),style:const TextStyle(fontSize:64,fontWeight:FontWeight.w900)),const Text('KM/H • GPS LIVE',style:TextStyle(color:cyan,letterSpacing:2)),const SizedBox(height:16),FilledButton.icon(onPressed:onStart,icon:const Icon(Icons.gps_fixed),label:Text(tracking?'GPS АКТИВЕН':'ВКЛЮЧИТЬ GPS')),const SizedBox(height:20)]);}
-}
-class SettingsPage extends StatelessWidget{final bool sound;final VoidCallback onSound;const SettingsPage({super.key,required this.sound,required this.onSound});
- Widget build(BuildContext c)=>ListView(padding:const EdgeInsets.all(16),children:[const Header('НАСТРОЙКИ','TEREK DRIVE 2.4 / FLUTTER'),const SizedBox(height:20),
- Card(color:panel,child:SwitchListTile(title:const Text('Звук и Гена'),subtitle:const Text('Голосовые подсказки'),value:sound,onChanged:(_)=>onSound())),
- const Card(color:panel,child:ListTile(leading:Icon(Icons.cloud_download,color:cyan),title:Text('Офлайн-карты'),subtitle:Text('Выбор города и загрузка региона'))),
- const Card(color:panel,child:ListTile(leading:Icon(Icons.palette,color:red),title:Text('Сезонные темы'),subtitle:Text('Весна • Лето • Осень • Зима'))),
- const Card(color:panel,child:ListTile(leading:Icon(Icons.language,color:green),title:Text('Язык'),subtitle:Text('Русский • English • Deutsch • Français • Español')))]);}
+class _DriveShellState extends State<DriveShell>{int tab=0;Position? pos;StreamSubscription<Position>? gps;bool sound=true,tracking=false;final tts=FlutterTts();void initState(){super.initState();_load();}Future<void>_load()async{final p=await SharedPreferences.getInstance();if(mounted)setState(()=>sound=p.getBool('sound')??true);}Future<void>_gps()async{if(!await Geolocator.isLocationServiceEnabled())return;var q=await Geolocator.checkPermission();if(q==LocationPermission.denied)q=await Geolocator.requestPermission();if(q==LocationPermission.denied||q==LocationPermission.deniedForever)return;await gps?.cancel();gps=Geolocator.getPositionStream(locationSettings:const LocationSettings(accuracy:LocationAccuracy.best,distanceFilter:2)).listen((p){if(mounted)setState(()=>pos=p);});if(mounted)setState(()=>tracking=true);}Future<void>_sound()async{final p=await SharedPreferences.getInstance();final n=!sound;await p.setBool('sound',n);if(mounted)setState(()=>sound=n);}void dispose(){gps?.cancel();tts.stop();super.dispose();}Widget build(BuildContext c){final pages=[MapPage(position:pos,onLocate:_gps),NavigationPage(position:pos,tts:tts,sound:sound),SpeedPage(position:pos,tracking:tracking,onStart:_gps),SettingsPage(sound:sound,onSound:_sound)];return Scaffold(body:SafeArea(child:pages[tab]),bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(i)=>setState(()=>tab=i),destinations:const[NavigationDestination(icon:Icon(Icons.map_outlined),selectedIcon:Icon(Icons.map),label:'Карта'),NavigationDestination(icon:Icon(Icons.navigation_outlined),selectedIcon:Icon(Icons.navigation),label:'Навигация'),NavigationDestination(icon:Icon(Icons.speed_outlined),selectedIcon:Icon(Icons.speed),label:'Скорость'),NavigationDestination(icon:Icon(Icons.settings_outlined),selectedIcon:Icon(Icons.settings),label:'Настройки')]));}}
+class MapPage extends StatefulWidget{final Position?position;final VoidCallback onLocate;const MapPage({super.key,this.position,required this.onLocate});State<MapPage>createState()=>_MapPageState();}
+class _MapPageState extends State<MapPage>{MapLibreMapController?map;static const home=LatLng(43.3178,45.6985);Widget build(BuildContext c)=>Stack(children:[MapLibreMap(styleString:'https://tiles.openfreemap.org/styles/liberty',initialCameraPosition:const CameraPosition(target:home,zoom:10),myLocationEnabled:true,onMapCreated:(x)=>map=x),Positioned(top:12,left:12,right:12,child:const Header('ТЕРЕК ДРАЙВ','MAP / FLUTTER ENGINE')),Positioned(bottom:18,right:16,child:FloatingActionButton(backgroundColor:red,onPressed:(){widget.onLocate();final p=widget.position;if(p!=null)map?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(p.latitude,p.longitude),14));},child:const Icon(Icons.my_location)))]);}
+class NavigationPage extends StatefulWidget{final Position?position;final FlutterTts tts;final bool sound;const NavigationPage({super.key,this.position,required this.tts,required this.sound});State<NavigationPage>createState()=>_NavigationPageState();}
+class _NavigationPageState extends State<NavigationPage>{final q=TextEditingController();String destination='';Future<void>say(String s)async{if(!widget.sound)return;await widget.tts.setLanguage('ru-RU');await widget.tts.setSpeechRate(.48);await widget.tts.speak(s);}void dispose(){q.dispose();super.dispose();}Widget build(BuildContext c)=>ListView(padding:const EdgeInsets.all(16),children:[const Header('НАВИГАЦИЯ','ROUTE CONTROL / ГЕНА'),const SizedBox(height:18),TextField(controller:q,onSubmitted:(v)=>setState(()=>destination=v.trim()),decoration:InputDecoration(labelText:'Куда едем?',prefixIcon:const Icon(Icons.search),filled:true,fillColor:panel,border:OutlineInputBorder(borderRadius:BorderRadius.circular(14)))),const SizedBox(height:14),Row(children:[Expanded(child:ActionCard('⛽','Заправка',()=>say('Ищу заправку'))),const SizedBox(width:8),Expanded(child:ActionCard('🅿','Парковка',()=>say('Ищу парковку')))]),const SizedBox(height:8),Row(children:[Expanded(child:ActionCard('🚿','Автомойка',()=>say('Ищу автомойку'))),const SizedBox(width:8),Expanded(child:ActionCard('🔧','Сервис',()=>say('Ищу сервис')))]),const SizedBox(height:20),Card(color:panel,child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('МАРШРУТ',style:TextStyle(color:cyan,fontWeight:FontWeight.bold)),const SizedBox(height:8),Text(destination.isEmpty?'Введите точку назначения':destination),const SizedBox(height:6),Text(positionStatus(widget.position)),const SizedBox(height:14),Row(children:[Expanded(child:FilledButton(onPressed:destination.isEmpty?null:()=>say('Строю маршрут до $destination'),child:const Text('ПОСТРОИТЬ'))),const SizedBox(width:8),Expanded(child:OutlinedButton(onPressed:destination.isEmpty?null:()=>say('Маршрут сохранён'),child:const Text('СОХРАНИТЬ')))])])))]);}String positionStatus(Position?p)=>p==null?'GPS не подключён':'GPS подключён';}
+class SpeedPage extends StatelessWidget{final Position?position;final bool tracking;final VoidCallback onStart;const SpeedPage({super.key,this.position,required this.tracking,required this.onStart});Widget build(BuildContext c){final v=position==null?0.0:math.max(0,position!.speed*3.6);return Column(children:[const SizedBox(height:18),const Header('SPEED','GPS LIVE / 300 KM/H'),Expanded(child:Center(child:CustomPaint(size:const Size(330,330),painter:GaugePainter(0)))),Text(v.round().toString(),style:const TextStyle(fontSize:64,fontWeight:FontWeight.w900)),const Text('KM/H • GPS LIVE',style:TextStyle(color:cyan,letterSpacing:2)),const SizedBox(height:16),FilledButton.icon(onPressed:onStart,icon:const Icon(Icons.gps_fixed),label:Text(tracking?'GPS АКТИВЕН':'ВКЛЮЧИТЬ GPS')),const SizedBox(height:20)]);}}
+class SettingsPage extends StatelessWidget{final bool sound;final VoidCallback onSound;const SettingsPage({super.key,required this.sound,required this.onSound});Widget build(BuildContext c)=>ListView(padding:const EdgeInsets.all(16),children:[const Header('НАСТРОЙКИ','TEREK DRIVE 2.4 / FLUTTER'),const SizedBox(height:20),Card(color:panel,child:SwitchListTile(title:const Text('Звук и Гена'),subtitle:const Text('Голосовые подсказки'),value:sound,onChanged:(_)=>onSound())),const Card(color:panel,child:ListTile(leading:Icon(Icons.cloud_download,color:cyan),title:Text('Офлайн-карты'),subtitle:Text('Выбор города и загрузка региона'))),const Card(color:panel,child:ListTile(leading:Icon(Icons.palette,color:red),title:Text('Сезонные темы'),subtitle:Text('Весна • Лето • Осень • Зима'))),const Card(color:panel,child:ListTile(leading:Icon(Icons.language,color:green),title:Text('Язык'),subtitle:Text('Русский • English • Deutsch • Français • Español')))]);}
 class Header extends StatelessWidget{final String a,b;const Header(this.a,this.b,{super.key});Widget build(BuildContext c)=>Row(children:[Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(a,style:const TextStyle(fontSize:24,fontWeight:FontWeight.w900,letterSpacing:1.5)),Text(b,style:const TextStyle(color:cyan,fontSize:11,letterSpacing:1.2))])),const Icon(Icons.bolt,color:red)]);}
 class ActionCard extends StatelessWidget{final String icon,title;final VoidCallback onTap;const ActionCard(this.icon,this.title,this.onTap,{super.key});Widget build(BuildContext c)=>Card(color:panel,child:InkWell(onTap:onTap,borderRadius:BorderRadius.circular(14),child:Padding(padding:const EdgeInsets.all(14),child:Column(children:[Text(icon,style:const TextStyle(fontSize:25)),const SizedBox(height:5),Text(title)]))));}
 class GaugePainter extends CustomPainter{final double speed;GaugePainter(this.speed);void paint(Canvas c,Size s){final o=s.center,r=s.width*.42;c.drawCircle(o,r,Paint()..style=PaintingStyle.stroke..strokeWidth=13..color=red);final p=Paint()..color=Colors.white70..strokeWidth=2;for(int i=0;i<=30;i++){final a=-math.pi*.75+math.pi*1.5*i/30;c.drawLine(o+Offset(math.cos(a),math.sin(a))*r*.83,o+Offset(math.cos(a),math.sin(a))*r*.94,p);}final a=-math.pi*.75+math.pi*1.5*(speed/300);c.drawLine(o,o+Offset(math.cos(a),math.sin(a))*r*.78,Paint()..color=red..strokeWidth=6..strokeCap=StrokeCap.round);c.drawCircle(o,9,Paint()..color=Colors.white);}bool shouldRepaint(covariant GaugePainter old)=>old.speed!=speed;}
