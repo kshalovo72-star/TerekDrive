@@ -100,7 +100,7 @@ private const val PREF_LAST_UPDATE = "last_notified_update"
 private const val PREF_SEARCH_HISTORY = "search_history"
 private const val GROZNY_LAT = 43.3178
 private const val GROZNY_LON = 45.6985
-private const val APP_VERSION_CODE = 13
+private const val APP_VERSION_CODE = 14
 
 private val BG = Color(0xFF07090C)
 private val PANEL = Color(0xFF10151B)
@@ -669,7 +669,7 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
             Text(locationState+" • "+if(measuredSpeed<1.5f)"0" else "%.1f".format(measuredSpeed)+" км/ч",color=MUTED,fontSize=10.sp)
         }
         Spacer(Modifier.height(8.dp))
-        SpeedometerGauge(gauges[gauge],speedDisplay,Modifier.fillMaxWidth().height(360.dp),animations)
+        SpeedometerGauge(gauges[gauge],speedDisplay,Modifier.fillMaxWidth().height(300.dp),animations)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement=Arrangement.spacedBy(9.dp),modifier=Modifier.fillMaxWidth()){
             Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){
@@ -732,7 +732,7 @@ private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animation
     Canvas(modifier){
         val cx=size.width/2f
         val cy=size.height*.49f
-        val r=minOf(size.width,size.height)*.425f
+        val r=minOf(size.width,size.height)*.40f
         val a0=Math.toRadians(135.0)
         val sweep=270.0
         fun p(radius:Float,f:Float):Offset{
