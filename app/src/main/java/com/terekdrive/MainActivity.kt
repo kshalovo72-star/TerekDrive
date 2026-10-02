@@ -100,7 +100,7 @@ private const val PREF_LAST_UPDATE = "last_notified_update"
 private const val PREF_SEARCH_HISTORY = "search_history"
 private const val GROZNY_LAT = 43.3178
 private const val GROZNY_LON = 45.6985
-private const val APP_VERSION_CODE = 11
+private const val APP_VERSION_CODE = 12
 
 private val BG = Color(0xFF07090C)
 private val PANEL = Color(0xFF10151B)
@@ -133,14 +133,7 @@ private data class Car(
 private val cars=listOf(
     Car("BMW M5","SPORT",730,305,1000,"xDrive",1970),
     Car("Mercedes G63","SUV",585,240,850,"4MATIC",2485),
-    Car("Audi RS7","SPORT",600,305,800,"quattro",2070),
-    Car("Toyota Supra","SPORT",387,250,500,"RWD",1570),
-    Car("Lamborghini Huracán","SUPER",640,325,600,"AWD",1422),
-    Car("Porsche 911","SPORT",650,320,800,"RWD",1590),
-    Car("Range Rover SVR","SUV",575,283,700,"AWD",2310),
-    Car("Ford Mustang","MUSCLE",480,290,570,"RWD",1810),
-    Car("Lexus LX 570","SUV",383,220,546,"4WD",2660),
-    Car("Nissan GT-R","SUPER",565,315,633,"AWD",1740)
+    Car("Lamborghini Huracán","SUPER",640,325,600,"AWD",1422)
 )
 private data class Gauge(val name:String,val accent:Color,val secondary:Color,val max:Int)
 private val gauges=listOf(
@@ -211,7 +204,7 @@ private fun WeatherOverlay(season:Season,animations:Boolean){
 }
 @Composable
 private fun TerekDrive(){
-    val season=currentSeason()
+    var season by rememberSaveable{mutableStateOf(currentSeason())}
     var tab by remember{mutableIntStateOf(0)}
     var sound by rememberSaveable{mutableStateOf(true)}
     var animations by rememberSaveable{mutableStateOf(true)}
@@ -242,24 +235,25 @@ private fun TerekDrive(){
                         Box(Modifier.weight(1f)){
                             when(tab){
                                 0->MapScreen(season)
-                                1->DriveScreen(sound,animations,assistant,language,{tab=0})
-                                2->GarageScreen(season)
-                                3->MediaScreen(sound,season)
-                                else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it},season)
+                                1->NavigationScreen(language,sound,{tab=0})
+                                2->DriveScreen(sound,animations,assistant,language,{tab=0})
+                                3->GarageScreen(season)
+                                else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it},season){season=it}
                             }
                         }
                         NavigationBar(containerColor=Color(0xFF090C10)){
                             val items=listOf(
-                                Icons.Default.Map to "Карта",Icons.Default.Speed to "Драйв",
-                                Icons.Default.DirectionsCar to "Гараж",Icons.Default.MusicNote to "Медиа",
+                                Icons.Default.Map to "Карта",
+                                Icons.Default.Navigation to "Навигация",
+                                Icons.Default.Speed to "Скорость",
+                                Icons.Default.DirectionsCar to "Гараж",
                                 Icons.Default.Settings to "Настройки"
                             )
                             items.forEachIndexed{i,item->
-                                NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.first,null)},label={Text(item.second,fontSize=9.sp)})
+                                NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.first,null)},label={Text(item.second,fontSize=8.sp)})
                             }
                         }
                     }
-                    QuickNavBar(tab=tab,onMap={tab=0},onDrive={tab=1},onMusic={tab=3},onGena={genaOpen=true},season=season)
                     GenaQuickCall(open=genaOpen,onOpen={genaOpen=true},onClose={genaOpen=false},sound=sound,language=language,season=season)
                 }
             }
@@ -666,8 +660,8 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
     )
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-        Text("DRIVE LAB",fontSize=25.sp,fontWeight=FontWeight.Black)
-        Text("РЕАЛЬНАЯ GPS-СКОРОСТЬ • 10 приборок • LIVE",color=MUTED,fontSize=12.sp)
+        Text("ИЗМЕРЕНИЕ СКОРОСТИ",fontSize=25.sp,fontWeight=FontWeight.Black)
+        Text("GPS • скорость • секундомер • приборы",color=MUTED,fontSize=12.sp)
         Spacer(Modifier.height(7.dp))
         Row(verticalAlignment=Alignment.CenterVertically){
             Box(Modifier.size(9.dp).clip(RoundedCornerShape(9.dp)).background(if(gpsEnabled && lastFixMs!=0L)GREEN else RED))
@@ -706,9 +700,6 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
             Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text(if(gpsEnabled)"ОБНОВИТЬ GPS-ДОСТУП" else "ВКЛЮЧИТЬ GPS-СКОРОСТЬ")
         }
         Spacer(Modifier.height(8.dp))
-        NavigationPlanner(language,sound,currentLat,currentLon,onOpenMap)
-        Spacer(Modifier.height(8.dp))
-        AssistantPanel(sound,assistant,language)
     }
 }
 
@@ -885,6 +876,57 @@ private fun saveSearchHistory(context:Context,value:String){
     context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString(PREF_SEARCH_HISTORY,next.joinToString("|")).apply()
 }
 @Composable
+private fun NavigationScreen(language:Int,sound:Boolean,onOpenMap:()->Unit){
+    var currentLat by remember{mutableStateOf<Double?>(null)}
+    var currentLon by remember{mutableStateOf<Double?>(null)}
+    var gpsEnabled by rememberSaveable{mutableStateOf(false)}
+    val context=LocalContext.current
+    val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){result->
+        gpsEnabled=result[Manifest.permission.ACCESS_FINE_LOCATION]==true || result[Manifest.permission.ACCESS_COARSE_LOCATION]==true
+    }
+    DisposableEffect(gpsEnabled){
+        if(!gpsEnabled)return@DisposableEffect onDispose{}
+        val lm=context.getSystemService(LocationManager::class.java)
+        val listener=object:LocationListener{
+            override fun onLocationChanged(location:Location){
+                currentLat=location.latitude
+                currentLon=location.longitude
+            }
+        }
+        runCatching{
+            if(ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED){
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,1f,listener)
+            }
+        }
+        onDispose{runCatching{lm.removeUpdates(listener)}}
+    }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
+        Text("НАВИГАЦИЯ",fontSize=25.sp,fontWeight=FontWeight.Black)
+        Text("МАРШРУТ • ПОИСК • МАНЁВРЫ • GPS",color=MUTED,fontSize=12.sp)
+        Spacer(Modifier.height(10.dp))
+        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(15.dp)){
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    Box(Modifier.size(9.dp).clip(RoundedCornerShape(9.dp)).background(if(gpsEnabled)GREEN else RED))
+                    Spacer(Modifier.width(7.dp))
+                    Text(if(currentLat!=null)"GPS • текущая позиция используется" else "GPS • маршрут от Грозного",color=MUTED,fontSize=10.sp)
+                }
+                Spacer(Modifier.height(9.dp))
+                Button(
+                    onClick={permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},
+                    modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)
+                ){
+                    Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(7.dp));Text(if(gpsEnabled)"ОБНОВИТЬ GPS" else "ВКЛЮЧИТЬ GPS")
+                }
+            }
+        }
+        Spacer(Modifier.height(9.dp))
+        NavigationPlanner(language,sound,currentLat,currentLon,onOpenMap)
+    }
+}
+
+@Composable
 private fun NavigationPlanner(language:Int,sound:Boolean,currentLat:Double?,currentLon:Double?,onOpenMap:()->Unit){
     var destination by rememberSaveable{mutableStateOf("")}
     var loading by remember{mutableStateOf(false)}
@@ -1036,7 +1078,7 @@ private fun GarageScreen(season:Season){
     val car=cars[selected]
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
         Text("МОЙ ГАРАЖ",fontSize=25.sp,fontWeight=FontWeight.Black)
-        Text("10 машин • характеристики • реальные приборы DRIVE",color=MUTED,fontSize=12.sp)
+        Text("3 машины • характеристики • реальные приборы DRIVE",color=MUTED,fontSize=12.sp)
         Spacer(Modifier.height(10.dp))
         Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
             Column(Modifier.padding(16.dp)){
@@ -1158,7 +1200,7 @@ private fun MediaScreen(sound:Boolean,season:Season){
 }
 
 @Composable
-private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int,onSound:()->Unit,onAnimations:()->Unit,onAssistant:(Int)->Unit,onLanguage:(Int)->Unit,season:Season){
+private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,language:Int,onSound:()->Unit,onAnimations:()->Unit,onAssistant:(Int)->Unit,onLanguage:(Int)->Unit,season:Season,onSeason:(Season)->Unit){
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
         Text("НАСТРОЙКИ",fontSize=25.sp,fontWeight=FontWeight.Black)
         Text("ТЕРЕК ДРАЙВ • персонализация",color=MUTED,fontSize=12.sp)
@@ -1167,7 +1209,21 @@ private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,langua
         SettingToggle("АНИМАЦИИ","Листья • снег • неон • дорога",animations,onAnimations,season.accent)
         Spacer(Modifier.height(8.dp))
         Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
-            Column(Modifier.padding(15.dp)){Text("СЕЗОН",fontWeight=FontWeight.Black);Text(season.emoji+" "+season.title+" • меняется автоматически по календарю",color=season.accent,fontSize=11.sp)}
+            Column(Modifier.padding(15.dp)){
+                Text("СЕЗОН",fontWeight=FontWeight.Black)
+                Text("Выбери оформление приложения",color=MUTED,fontSize=10.sp)
+                Spacer(Modifier.height(6.dp))
+                LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                    items(Season.values().toList()){item->
+                        FilterChip(
+                            selected=item==season,
+                            onClick={onSeason(item)},
+                            label={Text(item.emoji+" "+item.title,fontSize=9.sp)},
+                            colors=FilterChipDefaults.filterChipColors(selectedContainerColor=item.accent.copy(alpha=.18f),selectedLabelColor=item.accent)
+                        )
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
         Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
@@ -1181,7 +1237,7 @@ private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,langua
             }
         }
         Spacer(Modifier.height(8.dp));AssistantSettings(assistant,onAssistant)
-        Spacer(Modifier.height(8.dp));Text("Версия 1.5 • Gena • Weather • Music",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(4.dp))
+        Spacer(Modifier.height(8.dp));Text("Версия 2.1 • Gena • Weather • Music",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(4.dp))
     }
 }
 
