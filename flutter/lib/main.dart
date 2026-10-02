@@ -49,7 +49,8 @@ class _DriveShellState extends State<DriveShell> {
   Position? position;
   StreamSubscription<Position>? gps;
   bool sound = true;
-  Season season = Season.winter;
+  Season season = _seasonForDate(DateTime.now());
+  GaugeStyle gaugeStyle = GaugeStyle.neon;
   final tts = FlutterTts();
 
   @override
@@ -60,8 +61,10 @@ class _DriveShellState extends State<DriveShell> {
     if (!mounted) return;
     setState(() {
       sound = p.getBool('sound') ?? true;
-      final i = p.getInt('season') ?? Season.winter.index;
-      season = Season.values[math.min(i, Season.values.length - 1)];
+      final savedSeason = p.getInt('season');
+      season = savedSeason == null ? _seasonForDate(DateTime.now()) : Season.values[math.min(savedSeason, Season.values.length - 1)];
+      final savedGauge = p.getInt('gauge') ?? GaugeStyle.neon.index;
+      gaugeStyle = GaugeStyle.values[math.min(savedGauge, GaugeStyle.values.length - 1)];
     });
   }
 
@@ -82,6 +85,12 @@ class _DriveShellState extends State<DriveShell> {
     await p.setBool('sound', sound);
   }
 
+  Future<void> setGauge(GaugeStyle value) async {
+    final p = await SharedPreferences.getInstance();
+    setState(() => gaugeStyle = value);
+    await p.setInt('gauge', value.index);
+  }
+
   Future<void> setSeason(Season value) async {
     final p = await SharedPreferences.getInstance();
     setState(() => season = value);
@@ -96,8 +105,8 @@ class _DriveShellState extends State<DriveShell> {
     final pages = [
       MapPage(position: position, season: season, onLocate: startGps),
       NavigationPage(position: position, tts: tts, sound: sound),
-      SpeedPage(position: position, onStart: startGps),
-      SettingsPage(sound: sound, season: season, onSound: toggleSound, onSeason: setSeason),
+      SpeedPage(position: position, onStart: startGps, gaugeStyle: gaugeStyle),
+      SettingsPage(sound: sound, season: season, gaugeStyle: gaugeStyle, onSound: toggleSound, onSeason: setSeason, onGauge: setGauge),
     ];
     return Scaffold(
       body: SafeArea(child: pages[tab]),
@@ -225,7 +234,8 @@ class _NavigationPageState extends State<NavigationPage> {
 class SpeedPage extends StatelessWidget {
   final Position? position;
   final VoidCallback onStart;
-  const SpeedPage({super.key, this.position, required this.onStart});
+  final GaugeStyle gaugeStyle;
+  const SpeedPage({super.key, this.position, required this.onStart, required this.gaugeStyle});
 
   @override
   Widget build(BuildContext context) {
@@ -236,7 +246,7 @@ class SpeedPage extends StatelessWidget {
         child: Center(
           child: CustomPaint(
             size: const Size(300, 300),
-            painter: GaugePainter(speed),
+            painter: GaugePainter(speed, gaugeStyle),
             child: SizedBox(width: 300, height: 300, child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Text(speed.toStringAsFixed(0), style: const TextStyle(fontSize: 72, fontWeight: FontWeight.w900)),
@@ -256,15 +266,26 @@ class SpeedPage extends StatelessWidget {
 class SettingsPage extends StatelessWidget {
   final bool sound;
   final Season season;
+  final GaugeStyle gaugeStyle;
   final ValueChanged<Season> onSeason;
+  final ValueChanged<GaugeStyle> onGauge;
   final VoidCallback onSound;
-  const SettingsPage({super.key, required this.sound, required this.season, required this.onSeason, required this.onSound});
+  const SettingsPage({super.key, required this.sound, required this.season, required this.gaugeStyle, required this.onSeason, required this.onGauge, required this.onSound});
 
   @override
   Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
     const Header('НАСТРОЙКИ', 'TEREK DRIVE'),
     SwitchListTile(value: sound, onChanged: (_) => onSound(), title: const Text('Голос Гены'), subtitle: const Text('Голосовые подсказки')),
     const Divider(),
+    const Text('СПИДОМЕТР', style: TextStyle(color: cyan, fontWeight: FontWeight.bold)),
+    RadioGroup<GaugeStyle>(
+      groupValue: gaugeStyle,
+      onChanged: (v) { if (v != null) onGauge(v); },
+      child: Column(children: [
+        for (final g in GaugeStyle.values) RadioListTile<GaugeStyle>(value: g, title: Text(g.title)),
+      ]),
+    ),
+    const SizedBox(height: 12),
     const Text('СЕЗОН', style: TextStyle(color: cyan, fontWeight: FontWeight.bold)),
     RadioGroup<Season>(
       groupValue: season,
@@ -300,25 +321,38 @@ class Header extends StatelessWidget {
 
 class GaugePainter extends CustomPainter {
   final double speed;
-  GaugePainter(this.speed);
+  final GaugeStyle style;
+  GaugePainter(this.speed, this.style);
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = math.min(size.width, size.height) / 2 - 20;
-    final base = Paint()..style = PaintingStyle.stroke..strokeWidth = 16..color = Colors.white10;
-    final active = Paint()..style = PaintingStyle.stroke..strokeWidth = 16..color = red..strokeCap = StrokeCap.round;
+    final base = Paint()..style = PaintingStyle.stroke..strokeWidth = style == GaugeStyle.classic ? 12 : 16..color = Colors.white10;
+    final accent = style == GaugeStyle.blue ? cyan : red;
+    final active = Paint()..style = PaintingStyle.stroke..strokeWidth = style == GaugeStyle.classic ? 12 : 16..color = accent..strokeCap = StrokeCap.round;
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi * .75, math.pi * 1.5, false, base);
     final value = (speed / 300).clamp(0.0, 1.0);
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi * .75, math.pi * 1.5 * value, false, active);
-    final tick = Paint()..color = Colors.white24..strokeWidth = 2;
+    final tick = Paint()..color = style == GaugeStyle.classic ? Colors.white54 : Colors.white24..strokeWidth = 2;
     for (var i = 0; i <= 30; i++) {
       final a = math.pi * .75 + math.pi * 1.5 * i / 30;
       final r1 = radius - (i % 5 == 0 ? 19 : 11);
       final r2 = radius - 5;
       canvas.drawLine(Offset(center.dx + math.cos(a) * r1, center.dy + math.sin(a) * r1), Offset(center.dx + math.cos(a) * r2, center.dy + math.sin(a) * r2), tick);
+      if (i % 5 == 0 && style != GaugeStyle.classic) {
+        final label = TextPainter(text: TextSpan(text: '${i * 10}', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w700)), textDirection: TextDirection.ltr)..layout();
+        final lr = radius - 36;
+        label.paint(canvas, Offset(center.dx + math.cos(a) * lr - label.width / 2, center.dy + math.sin(a) * lr - label.height / 2));
+      }
     }
   }
-  @override bool shouldRepaint(covariant GaugePainter oldDelegate) => oldDelegate.speed != speed;
+  @override bool shouldRepaint(covariant GaugePainter oldDelegate) => oldDelegate.speed != speed || oldDelegate.style != style;
+}
+
+enum GaugeStyle {
+  neon('NEON RED'), blue('BLUE SPORT'), classic('CLASSIC');
+  final String title;
+  const GaugeStyle(this.title);
 }
 
 enum Season {
@@ -327,15 +361,51 @@ enum Season {
   const Season(this.title);
 }
 
-class SeasonalEffects extends StatelessWidget {
+class SeasonalEffects extends StatefulWidget {
   final Season season;
   const SeasonalEffects({super.key, required this.season});
-  @override
-  Widget build(BuildContext context) {
-    if (season == Season.summer) return const SizedBox.shrink();
-    return IgnorePointer(child: Container(decoration: BoxDecoration(gradient: LinearGradient(
-      begin: Alignment.topCenter, end: Alignment.bottomCenter,
-      colors: [season == Season.winter ? Colors.white.withValues(alpha: .05) : Colors.orange.withValues(alpha: .035), Colors.transparent],
-    ))));
-  }
+  @override State<SeasonalEffects> createState() => _SeasonalEffectsState();
 }
+class _SeasonalEffectsState extends State<SeasonalEffects> with SingleTickerProviderStateMixin {
+  late final AnimationController animation;
+  final random = math.Random(7);
+  late final List<Offset> seeds;
+  @override void initState() {
+    super.initState();
+    seeds = List.generate(42, (_) => Offset(random.nextDouble(), random.nextDouble()));
+    animation = AnimationController(vsync: this, duration: const Duration(seconds: 18))..repeat();
+  }
+  @override void dispose() { animation.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) => IgnorePointer(
+    child: AnimatedBuilder(
+      animation: animation,
+      builder: (_, __) => CustomPaint(painter: SeasonPainter(widget.season, seeds, animation.value)),
+    ),
+  );
+}
+class SeasonPainter extends CustomPainter {
+  final Season season; final List<Offset> seeds; final double t;
+  SeasonPainter(this.season, this.seeds, this.t);
+  @override void paint(Canvas canvas, Size size) {
+    final paint = Paint();
+    final overlay = Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+      colors: [season == Season.winter ? Colors.blueGrey.withValues(alpha:.10) : season == Season.summer ? Colors.amber.withValues(alpha:.06) : Colors.orange.withValues(alpha:.05), Colors.transparent]).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, overlay);
+    for (var i=0; i<seeds.length; i++) {
+      final s=seeds[i]; final x=(s.dx + math.sin(t*math.pi*2+i)*.015)*size.width;
+      final y=((s.dy+t*(season==Season.winter?.10:season==Season.autumn?.055:season==Season.spring?.07:.025))%1)*size.height;
+      if (season == Season.winter) {
+        paint.color=Colors.white.withValues(alpha:.65); canvas.drawCircle(Offset(x,y), 1.5+(i%3), paint);
+      } else if (season == Season.autumn) {
+        paint.color=Colors.orange.withValues(alpha:.55); canvas.drawOval(Rect.fromCenter(center:Offset(x,y),width:7,height:4), paint);
+      } else if (season == Season.spring) {
+        paint.color=Colors.pink.withValues(alpha:.45); canvas.drawCircle(Offset(x,y), 2.2, paint);
+      } else {
+        paint.color=Colors.amber.withValues(alpha:.18); canvas.drawCircle(Offset(x,y), 1.5, paint);
+      }
+    }
+  }
+  @override bool shouldRepaint(covariant SeasonPainter old) => old.t != t || old.season != season;
+}
+
+Season _seasonForDate(DateTime d) { if (d.month >= 3 && d.month <= 5) return Season.spring; if (d.month >= 6 && d.month <= 8) return Season.summer; if (d.month >= 9 && d.month <= 11) return Season.autumn; return Season.winter; }
