@@ -39,3 +39,4 @@ jobs:
         with:
           name: TerekDrive-Flutter-debug
           path: flutter/build/app/outputs/flutter-apk/app-debug.apk
+# CI verification trigger
