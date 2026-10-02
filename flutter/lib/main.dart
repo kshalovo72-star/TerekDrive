@@ -1,77 +1,311 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 
-class PlaceResult{final String name;final double lat,lon;PlaceResult(this.name,this.lat,this.lon);}
-double distanceMeters(double a,double b,double c,double d){const r=6371000.0;final p1=a*math.pi/180,p2=c*math.pi/180,dp=(c-a)*math.pi/180,dl=(d-b)*math.pi/180;final x=math.sin(dp/2)*math.sin(dp/2)+math.cos(p1)*math.cos(p2)*math.sin(dl/2)*math.sin(dl/2);return r*2*math.atan2(math.sqrt(x),math.sqrt(1-x));}
-double routeDistanceMeters(Position p,List<LatLng> pts){if(pts.length<2)return double.infinity;final lat0=p.latitude*math.pi/180;final scaleX=111320*math.cos(lat0),scaleY=110540;final px=p.longitude*scaleX,py=p.latitude*scaleY;var best=double.infinity;for(var i=0;i<pts.length-1;i++){final ax=pts[i].longitude*scaleX,ay=pts[i].latitude*scaleY,bx=pts[i+1].longitude*scaleX,by=pts[i+1].latitude*scaleY;final dx=bx-ax,dy=by-ay,den=dx*dx+dy*dy;final t=den==0?0:((px-ax)*dx+(py-ay)*dy)/den;final u=t.clamp(0.0,1.0);final qx=ax+dx*u,qy=ay+dy*u;best=math.min(best,math.sqrt((px-qx)*(px-qx)+(py-qy)*(py-qy)));}return best;}
-class RouteStep{final String type,modifier,name;final double distance;final LatLng location;RouteStep(this.type,this.modifier,this.name,this.distance,this.location);}
-class RouteResult{final List<LatLng> points;final double km,minutes;final List<RouteStep> steps;RouteResult(this.points,this.km,this.minutes,this.steps);}
-String maneuverText(RouteStep s){final m={'left':'налево','right':'направо','slight left':'плавно налево','slight right':'плавно направо','sharp left':'резко налево','sharp right':'резко направо','straight':'прямо','uturn':'развернитесь'}[s.modifier]??s.modifier;switch(s.type){case 'arrive':return 'Вы прибыли в пункт назначения';case 'roundabout':return 'На круговом движении съезд';case 'merge':return 'Перестройтесь $m';case 'fork':return 'На развилке держитесь $m';case 'depart':return 'Начните движение';default:return s.name.isEmpty?'Поверните $m':'Поверните $m на ${s.name}';}}
+const bg = Color(0xFF07090C);
+const panel = Color(0xFF10151B);
+const red = Color(0xFFFF3B30);
+const cyan = Color(0xFF00D9FF);
 
-Future<List<PlaceResult>> searchPlaces(String query) async {
-  final uri=Uri.https('nominatim.openstreetmap.org','/search',{'q':query,'format':'jsonv2','limit':'5','addressdetails':'1'});
-  final r=await http.get(uri,headers:{'User-Agent':'TerekDrive/2.4 (+TerekDrive navigation app)'});
-  if(r.statusCode!=200)throw Exception('Поиск: HTTP ${r.statusCode}');
-  final data=jsonDecode(r.body) as List;
-  return data.map((e)=>PlaceResult(e['display_name'] as String,double.parse(e['lat'] as String),double.parse(e['lon'] as String))).toList();
-}
-Future<RouteResult> buildRoute(Position from,PlaceResult to) async {
-  final uri=Uri.parse('https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${to.lon},${to.lat}?overview=full&geometries=geojson&steps=true');
-  final r=await http.get(uri,headers:{'User-Agent':'TerekDrive/2.4'});
-  if(r.statusCode!=200)throw Exception('Маршрут: HTTP ${r.statusCode}');
-  final data=jsonDecode(r.body) as Map<String,dynamic>;
-  if(data['code']!='Ok')throw Exception('Маршрут не найден');
-  final route=(data['routes'] as List).first as Map<String,dynamic>;
-  final coords=((route['geometry'] as Map)['coordinates'] as List).map((p)=>LatLng((p[1] as num).toDouble(),(p[0] as num).toDouble())).toList();
-  final steps=<RouteStep>[];for(final leg in (route['legs'] as List)){for(final raw in (leg['steps'] as List)){final m=raw['maneuver'] as Map;final loc=m['location'] as List;steps.add(RouteStep(m['type'] as String? ?? 'turn',m['modifier'] as String? ?? '',raw['name'] as String? ?? '',(raw['distance'] as num).toDouble(),LatLng((loc[1] as num).toDouble(),(loc[0] as num).toDouble())));}}
-  return RouteResult(coords,(route['distance'] as num).toDouble()/1000,(route['duration'] as num).toDouble()/60,steps);
+void main() => runApp(const MyApp());
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
+    title: 'Терек Драйв',
+    theme: ThemeData.dark(useMaterial3: true).copyWith(
+      scaffoldBackgroundColor: bg,
+      colorScheme: const ColorScheme.dark(primary: red, secondary: cyan),
+    ),
+    home: const DriveShell(),
+  );
 }
 
-
-const bg=Color(0xFF07090C),panel=Color(0xFF10151B),red=Color(0xFFFF3B30),cyan=Color(0xFF00D9FF),green=Color(0xFF00E5A0);
-void main()=>runApp(const TerekDriveApp());
-class TerekDriveApp extends StatelessWidget{const TerekDriveApp({super.key});Widget build(BuildContext c)=>MaterialApp(debugShowCheckedModeBanner:false,title:'Терек Драйв',theme:ThemeData.dark(useMaterial3:true).copyWith(scaffoldBackgroundColor:bg,colorScheme:const ColorScheme.dark(primary:red,secondary:cyan)),home:const DriveShell());}
-class DriveShell extends StatefulWidget{const DriveShell({super.key});State<DriveShell> createState()=>_DriveShellState();}
-class _DriveShellState extends State<DriveShell>{int tab=0;Position? pos;StreamSubscription<Position>? gps;bool sound=true,tracking=false;Season season=Season.winter;final tts=FlutterTts();void initState(){super.initState();_load();}Future<void>_load()async{final p=await SharedPreferences.getInstance();if(mounted)setState((){sound=p.getBool('sound')??true;season=Season.values[p.getInt('season')??Season.winter.index];});}
-Future<void>_season(Season x)async{final p=await SharedPreferences.getInstance();await p.setInt('season',x.index);if(mounted)setState(()=>season=x);}Future<void>_gps()async{if(!await Geolocator.isLocationServiceEnabled())return;var q=await Geolocator.checkPermission();if(q==LocationPermission.denied)q=await Geolocator.requestPermission();if(q==LocationPermission.denied||q==LocationPermission.deniedForever)return;await gps?.cancel();gps=Geolocator.getPositionStream(locationSettings:const LocationSettings(accuracy:LocationAccuracy.best,distanceFilter:2)).listen((p){if(mounted)setState(()=>pos=p);});if(mounted)setState(()=>tracking=true);}Future<void>_sound()async{final p=await SharedPreferences.getInstance();final n=!sound;await p.setBool('sound',n);if(mounted)setState(()=>sound=n);}void dispose(){gps?.cancel();tts.stop();super.dispose();}Widget build(BuildContext c){final pages=[MapPage(position:pos,onLocate:_gps,season:season),NavigationPage(position:pos,tts:tts,sound:sound),SpeedPage(position:pos,tracking:tracking,onStart:_gps,season:season),SettingsPage(sound:sound,onSound:_sound,season:season,onSeason:_season,onOffline:(){Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const OfflineMapsPage()));})];return Scaffold(body:SafeArea(child:AnimatedSwitcher(duration:const Duration(milliseconds:450),switchInCurve:Curves.easeOutCubic,child:KeyedSubtree(key:ValueKey(tab),child:pages[tab]))),bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(i)=>setState(()=>tab=i),destinations:const[NavigationDestination(icon:Icon(Icons.map_outlined),selectedIcon:Icon(Icons.map),label:'Карта'),NavigationDestination(icon:Icon(Icons.navigation_outlined),selectedIcon:Icon(Icons.navigation),label:'Навигация'),NavigationDestination(icon:Icon(Icons.speed_outlined),selectedIcon:Icon(Icons.speed),label:'Скорость'),NavigationDestination(icon:Icon(Icons.settings_outlined),selectedIcon:Icon(Icons.settings),label:'Настройки')]));}}
-class MapPage extends StatefulWidget{final Position?position;final VoidCallback onLocate;final Season season;const MapPage({super.key,this.position,required this.onLocate,required this.season});State<MapPage>createState()=>_MapPageState();}
-class _MapPageState extends State<MapPage>{MapLibreMapController?map;double offlineProgress=0;bool offlineBusy=false;String?offlineMessage;static const home=LatLng(43.3178,45.6985);Future<void>_downloadOffline()async{final p=widget.position;if(p==null){if(mounted)setState(()=>offlineMessage='Сначала включи GPS');return;}if(offlineBusy)return;final dLat=.045,dLon=.065;setState((){offlineBusy=true;offlineProgress=0;offlineMessage='Загрузка офлайн-карты…';});try{await setOfflineTileCountLimit(3500);final definition=OfflineRegionDefinition(bounds:LatLngBounds(southwest:LatLng(p.latitude-dLat,p.longitude-dLon),northeast:LatLng(p.latitude+dLat,p.longitude+dLon)),minZoom:10,maxZoom:15,mapStyleUrl:'https://tiles.openfreemap.org/styles/liberty',includeIdeographs:false);await downloadOfflineRegion(definition,metadata:{'name':'Терек Драйв • моя зона','lat':p.latitude,'lon':p.longitude},onEvent:(e){if(e is InProgress&&mounted)setState(()=>offlineProgress=e.requiredResourceCount>0?e.completedResourceCount/e.requiredResourceCount:0);if(e is Success&&mounted)setState(()=>offlineProgress=1);});if(mounted)setState(()=>offlineMessage='Офлайн-карта готова');}catch(e){if(mounted)setState(()=>offlineMessage='Ошибка загрузки: $e');}finally{if(mounted)setState(()=>offlineBusy=false);}} Widget build(BuildContext c)=>Stack(children:[MapLibreMap(styleString:'https://tiles.openfreemap.org/styles/liberty',initialCameraPosition:const CameraPosition(target:home,zoom:10),myLocationEnabled:true,onMapCreated:(x)=>map=x),Positioned(top:12,left:12,right:12,child:const Header('ТЕРЕК ДРАЙВ','MAP / FLUTTER ENGINE')),Positioned.fill(child:IgnorePointer(child:SeasonalEffects(season:season))),Positioned(bottom:88,right:16,child:FloatingActionButton(backgroundColor:panel,onPressed:_downloadOffline,child:const Icon(Icons.cloud_download,color:cyan))),Positioned(bottom:18,right:16,child:FloatingActionButton(backgroundColor:red,onPressed:(){widget.onLocate();final p=widget.position;if(p!=null)map?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(p.latitude,p.longitude),14));},child:const Icon(Icons.my_location))),if(offlineMessage!=null)Positioned(bottom:150,left:16,right:16,child:Card(color:panel,child:Padding(padding:const EdgeInsets.all(10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(offlineMessage!,style:const TextStyle(fontWeight:FontWeight.w700)),if(offlineBusy)Padding(padding:const EdgeInsets.only(top:8),child:LinearProgressIndicator(value:offlineProgress,color:cyan))]))))]);}
-class NavigationPage extends StatefulWidget{final Position?position;final FlutterTts tts;final bool sound;const NavigationPage({super.key,this.position,required this.tts,required this.sound});State<NavigationPage>createState()=>_NavigationPageState();}
-class _NavigationPageState extends State<NavigationPage>{final q=TextEditingController();MapLibreMapController?map;List<PlaceResult>results=[];PlaceResult?selected;RouteResult?route;bool busy=false,navigating=false,rerouting=false;String?error;int stepIndex=0;DateTime?lastVoice;double remainingMeters=0;DateTime?lastCameraUpdate;bool arrived=false;String? savedName;double? savedLat,savedLon;
-@override void initState(){super.initState();_loadSaved();}
-Future<void>_loadSaved()async{final p=await SharedPreferences.getInstance();if(!mounted)return;setState((){savedName=p.getString('saved_route_name');savedLat=p.getDouble('saved_route_lat');savedLon=p.getDouble('saved_route_lon');});}
-Future<void>_saveSelected()async{final x=selected;if(x==null)return;final p=await SharedPreferences.getInstance();await p.setString('saved_route_name',x.name);await p.setDouble('saved_route_lat',x.lat);await p.setDouble('saved_route_lon',x.lon);if(mounted)setState((){savedName=x.name;savedLat=x.lat;savedLon=x.lon;});await say('Маршрут сохранён.');}
-Future<void>_loadSavedRoute()async{if(savedName==null||savedLat==null||savedLon==null)return;await showRoute(PlaceResult(savedName!,savedLat!,savedLon!));}
-Future<void>say(String s)async{if(!widget.sound)return;await widget.tts.setLanguage('ru-RU');await widget.tts.setSpeechRate(.48);await widget.tts.speak(s);}
-Future<void>search()async{final text=q.text.trim();if(text.isEmpty)return;setState((){busy=true;error=null;results=[];});try{final r=await searchPlaces(text);if(!mounted)return;setState(()=>results=r);if(r.length==1)await showRoute(r.first);}catch(e){if(mounted)setState(()=>error=e.toString());}finally{if(mounted)setState(()=>busy=false);}}
-Future<void>showRoute(PlaceResult place)async{final p=widget.position;if(p==null){setState(()=>error='Сначала включи GPS');return;}setState((){busy=true;error=null;selected=place;stepIndex=0;});try{final rr=await buildRoute(p,place);if(map!=null&&rr.points.length>1){await map!.clearLines();await map!.addLine(LineOptions(geometry:rr.points,lineColor:'#00D9FF',lineWidth:6,lineOpacity:.9));await map!.animateCamera(CameraUpdate.newLatLngBounds(_bounds(rr.points),left:40,right:40,top:160,bottom:260));}if(mounted){setState((){route=rr;arrived=false;});await say('Маршрут построен. ${rr.km.toStringAsFixed(1)} километра.');}}catch(e){if(mounted)setState(()=>error=e.toString());}finally{if(mounted)setState(()=>busy=false);}}
-Future<void>startNavigation()async{if(route==null)return;setState(()=>navigating=true);stepIndex=0;lastVoice=null;remainingMeters=route!.km*1000;await say('Навигация начата. ${route!.steps.isNotEmpty?maneuverText(route!.steps.first):'Следуйте по маршруту'}');}
-Future<void>followCamera(Position p)async{final m=map;if(m==null||!navigating)return;final now=DateTime.now();if(lastCameraUpdate!=null&&now.difference(lastCameraUpdate!).inMilliseconds<350)return;lastCameraUpdate=now;final heading=p.hasHeading&&p.heading.isFinite&&p.heading>=0?p.heading:0;final speedKmh=math.max(0,p.speed*3.6);final zoom=speedKmh<15?18.0:speedKmh<40?17.2:speedKmh<80?16.4:15.5;try{await m.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target:LatLng(p.latitude,p.longitude),zoom:zoom,bearing:heading,tilt:speedKmh>25?45:35)));}catch(_){}}
-void recalcRemaining(Position p){final rr=route;if(rr==null||rr.steps.isEmpty)return;final i=math.min(stepIndex,rr.steps.length-1);var rem=distanceMeters(p.latitude,p.longitude,rr.steps[i].location.latitude,rr.steps[i].location.longitude);for(var j=i+1;j<rr.steps.length;j++)rem+=rr.steps[j].distance;remainingMeters=math.max(0,rem);}
-String etaText(){final kmh=widget.position==null?0:math.max(0,widget.position!.speed*3.6);final hours=kmh>=5?remainingMeters/1000/kmh:((route?.minutes??0)/60)*(route==null||route!.km<=0?1:remainingMeters/1000/route!.km);final mins=math.max(0,(hours*60).round());return mins<1?'менее минуты':'$mins мин';}
-String turnIcon(RouteStep s){if(s.type=='arrive')return '⌖';if(s.modifier.contains('left'))return '↰';if(s.modifier.contains('right'))return '↱';if(s.modifier=='uturn')return '↶';if(s.type=='roundabout')return '⟳';return '↑';}
-Future<void>updateNavigation(Position p)async{if(!navigating||route==null||route!.steps.isEmpty||rerouting)return;recalcRemaining(p);await followCamera(p);final target=route!.steps[math.min(stepIndex,route!.steps.length-1)].location;final d=distanceMeters(p.latitude,p.longitude,target.latitude,target.longitude);final offRoute=routeDistanceMeters(p,route!.points);final destination=route!.points.isEmpty?double.infinity:distanceMeters(p.latitude,p.longitude,route!.points.last.latitude,route!.points.last.longitude);if(destination<30||d<25&&stepIndex>=route!.steps.length-1){arrived=true;navigating=false;remainingMeters=0;await say('Вы прибыли в пункт назначения.');if(mounted)setState((){});return;}if(offRoute>65&&stepIndex>0){setState(()=>rerouting=true);await say('Вы отклонились от маршрута. Перестраиваю маршрут.');if(selected!=null)await showRoute(selected!);if(mounted){setState(()=>rerouting=false);await startNavigation();}return;}if(d<35&&stepIndex<route!.steps.length-1){stepIndex++;await say(maneuverText(route!.steps[stepIndex]));}else if(d<250){final now=DateTime.now();if(lastVoice==null||now.difference(lastVoice!).inSeconds>20){lastVoice=now;final s=route!.steps[math.min(stepIndex+1,route!.steps.length-1)];await say('Через ${d.round()} метров. ${maneuverText(s)}');}}}
-LatLngBounds _bounds(List<LatLng> p){var minLat=p.first.latitude,maxLat=p.first.latitude,minLon=p.first.longitude,maxLon=p.first.longitude;for(final x in p){minLat=math.min(minLat,x.latitude);maxLat=math.max(maxLat,x.latitude);minLon=math.min(minLon,x.longitude);maxLon=math.max(maxLon,x.longitude);}return LatLngBounds(southwest:LatLng(minLat,minLon),northeast:LatLng(maxLat,maxLon));}
-void didUpdateWidget(covariant NavigationPage oldWidget){super.didUpdateWidget(oldWidget);final p=widget.position;if(p!=null&&navigating&&p!=oldWidget.position){unawaited(updateNavigation(p));}}
-void dispose(){q.dispose();super.dispose();}
-Widget build(BuildContext c){final next=route!=null&&route!.steps.isNotEmpty?route!.steps[math.min(stepIndex,route!.steps.length-1)]:null;return Column(children:[const Padding(padding:EdgeInsets.fromLTRB(16,16,16,8),child:Header('НАВИГАЦИЯ','LIVE TURN-BY-TURN / ГЕНА')),Expanded(child:Stack(children:[MapLibreMap(styleString:'https://tiles.openfreemap.org/styles/liberty',initialCameraPosition:const CameraPosition(target:LatLng(43.3178,45.6985),zoom:10),myLocationEnabled:true,onMapCreated:(x)=>map=x),Positioned(top:10,left:12,right:12,child:Card(color:panel,child:Padding(padding:const EdgeInsets.all(8),child:Row(children:[Expanded(child:TextField(controller:q,onSubmitted:(_)=>search(),decoration:const InputDecoration(hintText:'Куда едем?',border:InputBorder.none))),IconButton(onPressed:busy?null:search,icon:busy?const SizedBox(width:20,height:20,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.search,color:cyan))])))),if(next!=null&&navigating)Positioned(top:76,left:12,right:12,child:Card(color:panel,child:Padding(padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),child:Row(children:[Text(turnIcon(next),style:const TextStyle(fontSize:46,fontWeight:FontWeight.w900,color:cyan)),const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(maneuverText(next),maxLines:2,style:const TextStyle(fontSize:17,fontWeight:FontWeight.w800)),Text('${distanceMeters(widget.position?.latitude??0,widget.position?.longitude??0,next.location.latitude,next.location.longitude).round()} м • шаг ${stepIndex+1}/${route!.steps.length}',style:const TextStyle(color:Colors.white60))]))])))),Positioned(bottom:10,left:12,right:12,child:Column(children:[if(results.isNotEmpty&&!navigating)Card(color:panel,child:ConstrainedBox(constraints:const BoxConstraints(maxHeight:130),child:ListView(shrinkWrap:true,children:results.map((x)=>ListTile(dense:true,title:Text(x.name,maxLines:2,overflow:TextOverflow.ellipsis),onTap:()=>showRoute(x))).toList()))),if(route==null&&savedName!=null&&!busy)Card(color:panel,child:ListTile(leading:const Icon(Icons.bookmark,color:cyan),title:const Text('Сохранённый маршрут'),subtitle:Text(savedName!,maxLines:2,overflow:TextOverflow.ellipsis),trailing:FilledButton(onPressed:_loadSavedRoute,child:const Text('ОТКРЫТЬ')))),if(route!=null&&!navigating)Card(color:panel,child:ListTile(leading:const Icon(Icons.navigation,color:cyan),title:Text('${route!.km.toStringAsFixed(1)} км • ${route!.minutes.round()} мин'),subtitle:Text(selected?.name??'Маршрут'),trailing:Wrap(spacing:4,children:[IconButton(tooltip:'Сохранить маршрут',onPressed:busy?null:_saveSelected,icon:const Icon(Icons.bookmark_border,color:cyan)),FilledButton(onPressed:busy?null:startNavigation,child:const Text('ПОЕХАЛИ'))]))),if(navigating)Card(color:panel,child:ListTile(leading:const Icon(Icons.stop_circle,color:red),title:Text(arrived?'ПРИБЫТИЕ': '${(remainingMeters/1000).toStringAsFixed(1)} км • ETA ${etaText()}'),subtitle:Text(rerouting?'Перестраиваю маршрут…':'GPS ведёт по маршруту • ${routeDistanceMeters(widget.position!,route!.points).round()} м от линии'),trailing:IconButton(onPressed:()=>setState(()=>navigating=false),icon:const Icon(Icons.stop,color:red))))]))])))),if(error!=null)Padding(padding:const EdgeInsets.all(6),child:Text(error!,style:const TextStyle(color:red))),Padding(padding:const EdgeInsets.fromLTRB(16,4,16,8),child:Row(children:[Expanded(child:Text(widget.position==null?'GPS не подключён':'GPS подключён',style:const TextStyle(color:cyan))),const Text('© OpenStreetMap contributors',style:TextStyle(fontSize:10,color:Colors.white54))]))]);}
+class DriveShell extends StatefulWidget {
+  const DriveShell({super.key});
+  @override
+  State<DriveShell> createState() => _DriveShellState();
 }
-class SpeedPage extends StatelessWidget{final Position?position;final bool tracking;final VoidCallback onStart;final Season season;const SpeedPage({super.key,this.position,required this.tracking,required this.onStart,required this.season});Widget build(BuildContext c){final v=position==null?0.0:math.max(0,position!.speed*3.6);return Stack(children:[Column(children:[const SizedBox(height:18),const Header('SPEED','GPS LIVE / 300 KM/H'),Expanded(child:Center(child:CustomPaint(size:const Size(330,330),painter:GaugePainter(v.clamp(0,300))))),Text(v.round().toString(),style:const TextStyle(fontSize:64,fontWeight:FontWeight.w900)),const Text('KM/H • GPS LIVE',style:TextStyle(color:cyan,letterSpacing:2)),const SizedBox(height:16),FilledButton.icon(onPressed:onStart,icon:const Icon(Icons.gps_fixed),label:Text(tracking?'GPS АКТИВЕН':'ВКЛЮЧИТЬ GPS')),const SizedBox(height:20)]),IgnorePointer(child:SeasonalEffects(season:season))]);}}class SettingsPage extends StatelessWidget{final bool sound;final VoidCallback onSound;final Season season;final ValueChanged<Season> onSeason;final VoidCallback onOffline;const SettingsPage({super.key,required this.sound,required this.onSound,required this.season,required this.onSeason,required this.onOffline});Widget build(BuildContext c)=>ListView(padding:const EdgeInsets.all(16),children:[const Header('НАСТРОЙКИ','TEREK DRIVE 2.4 / FLUTTER'),const SizedBox(height:20),Card(color:panel,child:SwitchListTile(title:const Text('Звук и Гена'),subtitle:const Text('Голосовые подсказки'),value:sound,onChanged:(_)=>onSound())),Card(color:panel,child:ListTile(leading:const Icon(Icons.cloud_download,color:cyan),title:const Text('Офлайн-карты'),subtitle:const Text('Зоны, прогресс, размер и удаление'),onTap:onOffline)),Card(color:panel,child:ListTile(leading:const Icon(Icons.auto_awesome,color:green),title:const Text('Реалистичное время года'),subtitle:Text(_seasonName(season)),trailing:DropdownButton<Season>(value:season,underline:const SizedBox(),dropdownColor:panel,items:Season.values.map((x)=>DropdownMenuItem(value:x,child:Text(_seasonName(x)))).toList(),onChanged:(x){if(x!=null)onSeason(x);}))),const Card(color:panel,child:ListTile(leading:Icon(Icons.language,color:green),title:Text('Язык'),subtitle:Text('Русский • English • Deutsch • Français • Español'))]);}
-String _seasonName(Season s)=>switch(s){Season.spring=>'🌸 Весна',Season.summer=>'☀️ Лето',Season.autumn=>'🍂 Осень',Season.winter=>'❄️ Зима'};enum Season{spring,summer,autumn,winter}
-class SeasonalEffects extends StatefulWidget{final Season season;const SeasonalEffects({super.key,required this.season});State<SeasonalEffects>createState()=>_SeasonalEffectsState();}
-class _SeasonalEffectsState extends State<SeasonalEffects>with SingleTickerProviderStateMixin{late final AnimationController c;late List<_Particle> particles;@override void initState(){super.initState();c=AnimationController(vsync:this,duration:const Duration(seconds:18))..repeat();particles=_make();}@override void didUpdateWidget(covariant SeasonalEffects old){super.didUpdateWidget(old);if(old.season!=widget.season)setState(()=>particles=_make());}List<_Particle>_make(){final r=math.Random(widget.season.index+7);return List.generate(widget.season==Season.summer?22:30,(_)=>_Particle(r.nextDouble(),r.nextDouble(),.5+r.nextDouble()*1.5,r.nextDouble()*math.pi*2));}@override void dispose(){c.dispose();super.dispose();}Widget build(BuildContext context)=>AnimatedBuilder(animation:c,builder:(_,__)=>CustomPaint(painter:_SeasonPainter(widget.season,particles,c.value),size:Size.infinite));}
-class _Particle{final double x,y,size,phase;_Particle(this.x,this.y,this.size,this.phase);}
-class _SeasonPainter extends CustomPainter{final Season season;final List<_Particle> ps;final double t;_SeasonPainter(this.season,this.ps,this.t);void paint(Canvas c,Size s){final p=Paint();final factor=switch(season){Season.winter=>.45,Season.autumn=>.30,Season.spring=>.22,Season.summer=>.08};for(final q in ps){final x=(q.x*s.width+math.sin(t*math.pi*2+q.phase)*18)%s.width;final y=(q.y*s.height+t*s.height*factor)%s.height;p.color=switch(season){Season.winter=>Colors.white.withOpacity(.45),Season.autumn=>Colors.orange.withOpacity(.55),Season.spring=>Colors.pinkAccent.withOpacity(.38),Season.summer=>Colors.yellow.withOpacity(.20)};if(season==Season.autumn){c.save();c.translate(x,y);c.rotate(t*4+q.phase);c.drawOval(Rect.fromCenter(center:Offset.zero,width:q.size*3,height:q.size*1.7),p);c.restore();}else{c.drawCircle(Offset(x,y),season==Season.summer?q.size*1.8:q.size,p);}}}bool shouldRepaint(covariant _SeasonPainter o)=>o.t!=t||o.season!=season;}
-class OfflineMapsPage extends StatefulWidget{const OfflineMapsPage({super.key});State<OfflineMapsPage>createState()=>_OfflineMapsPageState();}
-class _OfflineMapsPageState extends State<OfflineMapsPage>{List<OfflineRegion> regions=[];bool loading=true;String?error;@override void initState(){super.initState();_load();}Future<void>_load()async{if(kIsWeb){setState((){loading=false;error='Офлайн-карты доступны на Android/iOS';});return;}try{final r=await getListOfRegions();if(mounted)setState((){regions=r;loading=false;});}catch(e){if(mounted)setState((){loading=false;error='Не удалось прочитать офлайн-карты: $e';});}}Future<void>_delete(OfflineRegion r)async{try{await deleteOfflineRegion(r.id);await _load();}catch(e){if(mounted)setState(()=>error='Удаление не удалось: $e');}}String _name(OfflineRegion r)=>r.metadata['name']?.toString()??'Офлайн-регион #'+r.id.toString();Widget build(BuildContext c)=>Scaffold(backgroundColor:bg,appBar:AppBar(title:const Text('ОФЛАЙН-КАРТЫ'),backgroundColor:bg),body:loading?const Center(child:CircularProgressIndicator(color:cyan)):error!=null?Center(child:Padding(padding:const EdgeInsets.all(24),child:Text(error!,textAlign:TextAlign.center,style:const TextStyle(color:red)))):regions.isEmpty?const Center(child:Text('Нет загруженных регионов')):ListView.builder(padding:const EdgeInsets.all(12),itemCount:regions.length,itemBuilder:(_,i){final r=regions[i];return Card(color:panel,child:ListTile(leading:const Icon(Icons.map,color:cyan),title:Text(_name(r)),subtitle:Text('Zoom '+r.definition.minZoom.toStringAsFixed(0)+'–'+r.definition.maxZoom.toStringAsFixed(0)),trailing:IconButton(onPressed:()=>_delete(r),icon:const Icon(Icons.delete_outline,color:red))));}));}
-class Header extends StatelessWidget{final String a,b;const Header(this.a,this.b,{super.key});Widget build(BuildContext c)=>Row(children:[Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(a,style:const TextStyle(fontSize:24,fontWeight:FontWeight.w900,letterSpacing:1.5)),Text(b,style:const TextStyle(color:cyan,fontSize:11,letterSpacing:1.2))])),const Icon(Icons.bolt,color:red)]);}
-class ActionCard extends StatelessWidget{final String icon,title;final VoidCallback onTap;const ActionCard(this.icon,this.title,this.onTap,{super.key});Widget build(BuildContext c)=>Card(color:panel,child:InkWell(onTap:onTap,borderRadius:BorderRadius.circular(14),child:Padding(padding:const EdgeInsets.all(14),child:Column(children:[Text(icon,style:const TextStyle(fontSize:25)),const SizedBox(height:5),Text(title)]))));}
-class GaugePainter extends CustomPainter{final double speed;GaugePainter(this.speed);void paint(Canvas c,Size s){final o=s.center,r=s.width*.42;c.drawCircle(o,r,Paint()..style=PaintingStyle.stroke..strokeWidth=13..color=red);final p=Paint()..color=Colors.white70..strokeWidth=2;for(int i=0;i<=30;i++){final a=-math.pi*.75+math.pi*1.5*i/30;c.drawLine(o+Offset(math.cos(a),math.sin(a))*r*.83,o+Offset(math.cos(a),math.sin(a))*r*.94,p);}final a=-math.pi*.75+math.pi*1.5*(speed/300);c.drawLine(o,o+Offset(math.cos(a),math.sin(a))*r*.78,Paint()..color=red..strokeWidth=6..strokeCap=StrokeCap.round);c.drawCircle(o,9,Paint()..color=Colors.white);}bool shouldRepaint(covariant GaugePainter old)=>old.speed!=speed;}
+
+class _DriveShellState extends State<DriveShell> {
+  int tab = 0;
+  Position? position;
+  StreamSubscription<Position>? gps;
+  bool sound = true;
+  Season season = Season.winter;
+  final tts = FlutterTts();
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      sound = p.getBool('sound') ?? true;
+      final i = p.getInt('season') ?? Season.winter.index;
+      season = Season.values[math.min(i, Season.values.length - 1)];
+    });
+  }
+
+  Future<void> startGps() async {
+    if (!await Geolocator.isLocationServiceEnabled()) return;
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
+    await gps?.cancel();
+    gps = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 2),
+    ).listen((p) { if (mounted) setState(() => position = p); });
+  }
+
+  Future<void> toggleSound() async {
+    final p = await SharedPreferences.getInstance();
+    setState(() => sound = !sound);
+    await p.setBool('sound', sound);
+  }
+
+  Future<void> setSeason(Season value) async {
+    final p = await SharedPreferences.getInstance();
+    setState(() => season = value);
+    await p.setInt('season', value.index);
+  }
+
+  @override
+  void dispose() { gps?.cancel(); tts.stop(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      MapPage(position: position, season: season, onLocate: startGps),
+      NavigationPage(position: position, tts: tts, sound: sound),
+      SpeedPage(position: position, onStart: startGps),
+      SettingsPage(sound: sound, season: season, onSound: toggleSound, onSeason: setSeason),
+    ];
+    return Scaffold(
+      body: SafeArea(child: pages[tab]),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: tab,
+        onDestinationSelected: (i) => setState(() => tab = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.map_outlined), label: 'Карта'),
+          NavigationDestination(icon: Icon(Icons.navigation_outlined), label: 'Навигация'),
+          NavigationDestination(icon: Icon(Icons.speed_outlined), label: 'Скорость'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Настройки'),
+        ],
+      ),
+    );
+  }
+}
+
+class MapPage extends StatefulWidget {
+  final Position? position;
+  final Season season;
+  final VoidCallback onLocate;
+  const MapPage({super.key, this.position, required this.season, required this.onLocate});
+  @override State<MapPage> createState() => _MapPageState();
+}
+
+class _MapPageState extends State<MapPage> {
+  MapLibreMapController? controller;
+  static const home = LatLng(43.3178, 45.6985);
+
+  @override
+  Widget build(BuildContext context) => Stack(children: [
+    MapLibreMap(
+      styleString: 'https://tiles.openfreemap.org/styles/liberty',
+      initialCameraPosition: const CameraPosition(target: home, zoom: 10),
+      myLocationEnabled: true,
+      onMapCreated: (c) => controller = c,
+    ),
+    const Positioned(top: 12, left: 12, right: 12, child: Header('ТЕРЕК ДРАЙВ', 'MAP / FLUTTER ENGINE')),
+    Positioned(
+      bottom: 18, right: 16,
+      child: FloatingActionButton(
+        backgroundColor: red,
+        onPressed: () {
+          widget.onLocate();
+          final p = widget.position;
+          if (p != null) controller?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(p.latitude, p.longitude), 14));
+        },
+        child: const Icon(Icons.my_location),
+      ),
+    ),
+    Positioned.fill(child: IgnorePointer(child: SeasonalEffects(season: widget.season))),
+  ]);
+}
+
+class NavigationPage extends StatefulWidget {
+  final Position? position;
+  final FlutterTts tts;
+  final bool sound;
+  const NavigationPage({super.key, this.position, required this.tts, required this.sound});
+  @override State<NavigationPage> createState() => _NavigationPageState();
+}
+
+class _NavigationPageState extends State<NavigationPage> {
+  final query = TextEditingController();
+  String message = 'Введите адрес или город';
+
+  @override void dispose() { query.dispose(); super.dispose(); }
+
+  Future<void> speak(String text) async {
+    if (!widget.sound) return;
+    await widget.tts.setLanguage('ru-RU');
+    await widget.tts.setSpeechRate(.48);
+    await widget.tts.speak(text);
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    const Padding(padding: EdgeInsets.fromLTRB(16, 16, 16, 8), child: Header('НАВИГАЦИЯ', 'LIVE / ГЕНА')),
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Card(
+        color: panel,
+        child: TextField(
+          controller: query,
+          onSubmitted: (v) {
+            final text = v.trim();
+            if (text.isNotEmpty) {
+              setState(() => message = 'Маршрут к «\function () { [native code] }» готовится');
+              speak('Маршрут к \function () { [native code] }');
+            }
+          },
+          decoration: const InputDecoration(
+            hintText: 'Куда едем?',
+            prefixIcon: Icon(Icons.search, color: cyan),
+            border: InputBorder.none,
+          ),
+        ),
+      ),
+    ),
+    Expanded(
+      child: Center(
+        child: Card(
+          color: panel,
+          margin: const EdgeInsets.all(16),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.navigation, size: 64, color: cyan),
+              const SizedBox(height: 12),
+              Text(message, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => speak('Гена готов. Куда едем?'),
+                icon: const Icon(Icons.record_voice_over),
+                label: const Text('ГЕНА'),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    ),
+  ]);
+}
+
+class SpeedPage extends StatelessWidget {
+  final Position? position;
+  final VoidCallback onStart;
+  const SpeedPage({super.key, this.position, required this.onStart});
+
+  @override
+  Widget build(BuildContext context) {
+    final speed = position == null ? 0.0 : math.max(0.0, position!.speed * 3.6);
+    return Column(children: [
+      const Padding(padding: EdgeInsets.all(16), child: Header('СКОРОСТЬ', 'GPS / 0—300 KM/H')),
+      Expanded(
+        child: Center(
+          child: CustomPaint(
+            size: const Size(300, 300),
+            painter: GaugePainter(speed),
+            child: SizedBox(width: 300, height: 300, child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(speed.toStringAsFixed(0), style: const TextStyle(fontSize: 72, fontWeight: FontWeight.w900)),
+                const Text('KM/H', style: TextStyle(color: cyan)),
+              ]),
+            )),
+          ),
+        ),
+      ),
+      Padding(padding: const EdgeInsets.all(20), child: FilledButton.icon(
+        onPressed: onStart, icon: const Icon(Icons.gps_fixed), label: const Text('ВКЛЮЧИТЬ GPS'),
+      )),
+    ]);
+  }
+}
+
+class SettingsPage extends StatelessWidget {
+  final bool sound;
+  final Season season;
+  final ValueChanged<Season> onSeason;
+  final VoidCallback onSound;
+  const SettingsPage({super.key, required this.sound, required this.season, required this.onSeason, required this.onSound});
+
+  @override
+  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
+    const Header('НАСТРОЙКИ', 'TEREK DRIVE'),
+    SwitchListTile(value: sound, onChanged: (_) => onSound(), title: const Text('Голос Гены'), subtitle: const Text('Голосовые подсказки')),
+    const Divider(),
+    const Text('СЕЗОН', style: TextStyle(color: cyan, fontWeight: FontWeight.bold)),
+    for (final s in Season.values)
+      RadioListTile<Season>(value: s, groupValue: season, onChanged: (v) { if (v != null) onSeason(v); }, title: Text(s.title)),
+  ]);
+}
+
+class Header extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  const Header(this.title, this.subtitle, {super.key});
+  @override
+  Widget build(BuildContext context) => Row(children: [
+    const Icon(Icons.bolt, color: red, size: 30),
+    const SizedBox(width: 8),
+    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
+      Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+    ]),
+  ]);
+}
+
+class GaugePainter extends CustomPainter {
+  final double speed;
+  GaugePainter(this.speed);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - 20;
+    final base = Paint()..style = PaintingStyle.stroke..strokeWidth = 14..color = Colors.white12;
+    final active = Paint()..style = PaintingStyle.stroke..strokeWidth = 14..color = cyan..strokeCap = StrokeCap.round;
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi * .75, math.pi * 1.5, false, base);
+    final value = (speed / 300).clamp(0.0, 1.0);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi * .75, math.pi * 1.5 * value, false, active);
+  }
+  @override bool shouldRepaint(covariant GaugePainter oldDelegate) => oldDelegate.speed != speed;
+}
+
+enum Season {
+  spring('Весна'), summer('Лето'), autumn('Осень'), winter('Зима');
+  final String title;
+  const Season(this.title);
+}
+
+class SeasonalEffects extends StatelessWidget {
+  final Season season;
+  const SeasonalEffects({super.key, required this.season});
+  @override
+  Widget build(BuildContext context) {
+    if (season == Season.summer) return const SizedBox.shrink();
+    return Container(decoration: BoxDecoration(gradient: LinearGradient(
+      begin: Alignment.topCenter, end: Alignment.bottomCenter,
+      colors: [season == Season.winter ? Colors.white.withValues(alpha: .04) : Colors.orange.withValues(alpha: .03), Colors.transparent],
+    )));
+  }
+}
