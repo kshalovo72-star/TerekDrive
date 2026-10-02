@@ -1,6 +1,6 @@
 {
-  "version": 8,
-  "message": "Терек Драйв 1.7: живой GPS-спидометр, красная зона и эффекты.",
+  "version": 9,
+  "message": "Терек Драйв 1.8: реалистичный спидометр и обновлённый гараж.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
