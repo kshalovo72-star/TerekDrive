@@ -66,8 +66,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.toArgb
@@ -81,6 +79,7 @@ import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.offline.OfflineManager
 import org.maplibre.android.offline.OfflineRegion
@@ -100,7 +99,7 @@ private const val PREF_LAST_UPDATE = "last_notified_update"
 private const val PREF_SEARCH_HISTORY = "search_history"
 private const val GROZNY_LAT = 43.3178
 private const val GROZNY_LON = 45.6985
-private const val APP_VERSION_CODE = 14
+private const val APP_VERSION_CODE = 15
 
 private val BG = Color(0xFF07090C)
 private val PANEL = Color(0xFF10151B)
@@ -127,14 +126,6 @@ private val languages=listOf(
 private data class Assistant(val name:String,val pitch:Float,val rate:Float)
 private val gena=Assistant("Гена",0.96f,1.02f)
 
-private data class Car(
-    val name:String,val type:String,val hp:Int,val top:Int,val torque:Int,val drive:String,val weight:Int
-)
-private val cars=listOf(
-    Car("BMW M5","SPORT",730,305,1000,"xDrive",1970),
-    Car("Mercedes G63","SUV",585,240,850,"4MATIC",2485),
-    Car("Lamborghini Huracán","SUPER",640,325,600,"AWD",1422)
-)
 private data class Gauge(val name:String,val accent:Color,val secondary:Color,val max:Int)
 private val gauges=listOf(
     Gauge("КЛАССИКА",RED,Color(0xFFFF8A80),300),
@@ -237,7 +228,6 @@ private fun TerekDrive(){
                                 0->MapScreen(season)
                                 1->NavigationScreen(language,sound,{tab=0})
                                 2->DriveScreen(sound,animations,assistant,language,{tab=0})
-                                3->GarageScreen(season)
                                 else->SettingsScreen(sound,animations,assistant,language,{sound=!sound},{animations=!animations},{assistant=it},{language=it},season){season=it}
                             }
                         }
@@ -246,7 +236,6 @@ private fun TerekDrive(){
                                 Icons.Default.Map to "Карта",
                                 Icons.Default.Navigation to "Навигация",
                                 Icons.Default.Speed to "Скорость",
-                                Icons.Default.DirectionsCar to "Гараж",
                                 Icons.Default.Settings to "Настройки"
                             )
                             items.forEachIndexed{i,item->
@@ -289,7 +278,7 @@ private fun genaAnswer(text:String):String {
     genaReplies.firstOrNull{q.contains(it.first)}?.let{return it.second.random()}
     if(q.contains("скорост")||q.contains("быстро")||q.contains("едем")) return "Скорость смотрю по GPS. Главное — выбирай её по дороге и условиям, а не по настроению."
     if(q.contains("маршрут")||q.contains("куда")) return "Назови пункт назначения — построим маршрут. А я буду напоминать о поворотах."
-    if(q.contains("машин")||q.contains("авто")||q.contains("машина")) return "В гараже есть десять машин. Выбирай характер: спорт, суперкар, SUV или мускул-кар."
+    if(q.contains("машин")||q.contains("авто")||q.contains("машина")) return "Гаража больше нет. Все основные функции теперь собраны в карте, навигации, скорости и настройках."
     if(q.contains("время")||q.contains("который час")) return "Сейчас "+java.text.SimpleDateFormat("HH:mm",Locale.getDefault()).format(java.util.Date())+". Время ехать спокойно, а не торопиться."
     if(q.contains("молодец")||q.contains("круто")) return listOf("Спасибо! Я стараюсь. У меня даже стрелка настроения есть — почти в красной зоне.","Вот это разговор. Едем дальше, шеф.").random()
     return genaFallbacks.random()
@@ -542,10 +531,73 @@ private fun checkForUpdates(context:Context){
     }
 }
 
+private data class MapPlace(
+    val name:String,
+    val lat:Double,
+    val lon:Double,
+    val south:Double,
+    val west:Double,
+    val north:Double,
+    val east:Double
+)
+
+private fun searchMapPlaces(query:String):List<MapPlace>{
+    if(query.trim().length<2)return emptyList()
+    return runCatching{
+        val url=URL("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&q="+Uri.encode(query.trim()))
+        val connection=url.openConnection() as HttpURLConnection
+        connection.connectTimeout=8000
+        connection.readTimeout=8000
+        connection.setRequestProperty("User-Agent","TerekDrive/2.4 (Android)")
+        val raw=connection.inputStream.bufferedReader().use{it.readText()}
+        connection.disconnect()
+        val arr=JSONArray(raw)
+        buildList{
+            for(i in 0 until arr.length()){
+                val o=arr.getJSONObject(i)
+                val box=o.optJSONArray("boundingbox") ?: continue
+                if(box.length()<4)continue
+                add(
+                    MapPlace(
+                        name=o.optString("display_name","Место"),
+                        lat=o.optDouble("lat"),
+                        lon=o.optDouble("lon"),
+                        south=box.getString(0).toDouble(),
+                        north=box.getString(1).toDouble(),
+                        west=box.getString(2).toDouble(),
+                        east=box.getString(3).toDouble()
+                    )
+                )
+            }
+        }
+    }.getOrElse{emptyList()}
+}
+
+private fun offlineBounds(place:MapPlace):LatLngBounds{
+    val centerLat=place.lat
+    val centerLon=place.lon
+    val rawLatSpan=(place.north-place.south).coerceIn(.04,.36)
+    val rawLonSpan=(place.east-place.west).coerceIn(.04,.50)
+    val latSpan=rawLatSpan*.60
+    val lonSpan=rawLonSpan*.60
+    val south=(centerLat-latSpan/2).coerceIn(-85.0,85.0)
+    val north=(centerLat+latSpan/2).coerceIn(-85.0,85.0)
+    val west=centerLon-lonSpan/2
+    val east=centerLon+lonSpan/2
+    return LatLngBounds.from(north,east,south,west)
+}
+
 @Composable
 private fun MapScreen(season:Season){
     var status by remember{mutableStateOf("Онлайн-карта готова")}
+    var query by rememberSaveable{mutableStateOf("")}
+    var results by remember{mutableStateOf<List<MapPlace>>(emptyList())}
+    var selected by remember{mutableStateOf<MapPlace?>(null)}
+    var searching by remember{mutableStateOf(false)}
     val context=LocalContext.current
+    val scope=rememberCoroutineScope()
+    var mapRef by remember{mutableStateOf<MapLibreMap?>(null)}
+
     Box(Modifier.fillMaxSize().padding(10.dp).clip(RoundedCornerShape(24.dp))){
         AndroidView(
             factory={ctx->
@@ -553,8 +605,9 @@ private fun MapScreen(season:Season){
                 MapView(ctx).also{v->
                     v.onCreate(null);v.onStart();v.onResume()
                     v.getMapAsync{map->
+                        mapRef=map
                         map.setStyle(STYLE_URL)
-                        map.cameraPosition=CameraPosition.Builder().target(LatLng(43.3178,45.6985)).zoom(11.0).build()
+                        map.cameraPosition=CameraPosition.Builder().target(LatLng(GROZNY_LAT,GROZNY_LON)).zoom(11.0).build()
                     }
                 }
             },
@@ -562,32 +615,151 @@ private fun MapScreen(season:Season){
             modifier=Modifier.fillMaxSize()
         )
         WeatherOverlay(season,true)
-        Column(Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter)){
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xEE111820)).padding(12.dp),verticalAlignment=Alignment.CenterVertically){
-                Icon(Icons.Default.Map,null,tint=season.accent);Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)){Text("MAPLIBRE • OPENFREEMAP",fontWeight=FontWeight.Black,fontSize=12.sp);Text(status,color=MUTED,fontSize=10.sp)}
-                Text("OFFLINE",color=GREEN,fontWeight=FontWeight.Black,fontSize=10.sp)
+
+        Column(
+            Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter)
+        ){
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xEE111820)).padding(10.dp),
+                verticalAlignment=Alignment.CenterVertically
+            ){
+                Icon(Icons.Default.Map,null,tint=season.accent)
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)){
+                    Text("КАРТА • OPENFREEMAP",fontWeight=FontWeight.Black,fontSize=12.sp)
+                    Text(status,color=MUTED,fontSize=9.sp)
+                }
             }
-            Spacer(Modifier.height(8.dp))
-            Button({status="Офлайн-загрузка запущена…";downloadOffline(context){status=it}},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){
-                Icon(Icons.Default.Download,null);Spacer(Modifier.width(8.dp));Text("СКАЧАТЬ ГРОЗНЫЙ ДЛЯ OFFLINE")
+
+            Spacer(Modifier.height(7.dp))
+
+            Card(
+                colors=CardDefaults.cardColors(containerColor=Color(0xF20D131A)),
+                modifier=Modifier.fillMaxWidth()
+            ){
+                Column(Modifier.padding(10.dp)){
+                    Text("ЗАГРУЗКА ГОРОДА",fontWeight=FontWeight.Black,fontSize=11.sp)
+                    Text("Найди любой город и сохрани его область для работы без интернета.",color=MUTED,fontSize=9.sp)
+                    Spacer(Modifier.height(7.dp))
+                    Row(verticalAlignment=Alignment.CenterVertically){
+                        OutlinedTextField(
+                            value=query,
+                            onValueChange={query=it},
+                            modifier=Modifier.weight(1f),
+                            singleLine=true,
+                            label={Text("Город")},
+                            placeholder={Text("Например: Москва")}
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Button(
+                            onClick={
+                                searching=true
+                                results=emptyList()
+                                scope.launch{
+                                    val found=withContext(Dispatchers.IO){searchMapPlaces(query)}
+                                    results=found
+                                    searching=false
+                                    status=if(found.isEmpty())"Город не найден" else "Найдено: "+found.size
+                                }
+                            },
+                            enabled=query.trim().length>=2 && !searching,
+                            shape=RoundedCornerShape(14.dp),
+                            contentPadding=PaddingValues(horizontal=12.dp,vertical=12.dp)
+                        ){
+                            Icon(if(searching)Icons.Default.Sync else Icons.Default.Search,null)
+                        }
+                    }
+
+                    if(results.isNotEmpty()){
+                        Spacer(Modifier.height(6.dp))
+                        results.take(4).forEach{place->
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                    .clickable{
+                                        selected=place
+                                        results=emptyList()
+                                        mapRef?.animateCamera(
+                                            CameraPosition.Builder()
+                                                .target(LatLng(place.lat,place.lon))
+                                                .zoom(11.5)
+                                                .build()
+                                        )
+                                        status="Выбран: "+place.name.substringBefore(",")
+                                    }
+                                    .padding(horizontal=8.dp,vertical=8.dp),
+                                verticalAlignment=Alignment.CenterVertically
+                            ){
+                                Icon(Icons.Default.Place,null,tint=season.accent,modifier=Modifier.size(18.dp))
+                                Spacer(Modifier.width(7.dp))
+                                Text(place.name,fontSize=9.sp,maxLines=2)
+                            }
+                        }
+                    }
+
+                    selected?.let{place->
+                        Spacer(Modifier.height(6.dp))
+                        Card(colors=CardDefaults.cardColors(containerColor=season.accent.copy(alpha=.10f))){
+                            Row(
+                                Modifier.fillMaxWidth().padding(9.dp),
+                                verticalAlignment=Alignment.CenterVertically
+                            ){
+                                Column(Modifier.weight(1f)){
+                                    Text("ВЫБРАН ГОРОД",color=season.accent,fontSize=8.sp,fontWeight=FontWeight.Black)
+                                    Text(place.name.substringBefore(",").ifBlank{"Город"},fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                    Text("Область карты будет сохранена на устройстве.",color=MUTED,fontSize=8.sp)
+                                }
+                                Button(
+                                    onClick={
+                                        status="Скачивание: "+place.name.substringBefore(",")
+                                        downloadOffline(context,place){status=it}
+                                    },
+                                    shape=RoundedCornerShape(12.dp),
+                                    contentPadding=PaddingValues(horizontal=10.dp,vertical=9.dp)
+                                ){
+                                    Icon(Icons.Default.Download,null,modifier=Modifier.size(17.dp))
+                                    Spacer(Modifier.width(5.dp))
+                                    Text("OFFLINE",fontSize=9.sp)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-        Row(Modifier.align(Alignment.BottomCenter).padding(14.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xF20B1015)).padding(16.dp),verticalAlignment=Alignment.CenterVertically){
-            Column(Modifier.weight(1f)){Text("OpenStreetMap + OpenFreeMap",fontWeight=FontWeight.Bold);Text("Карта работает отдельно от 2ГИС-ключа",color=MUTED,fontSize=11.sp)}
+
+        Row(
+            Modifier.align(Alignment.BottomCenter).padding(14.dp).fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp)).background(Color(0xF20B1015)).padding(14.dp),
+            verticalAlignment=Alignment.CenterVertically
+        ){
+            Column(Modifier.weight(1f)){
+                Text("OpenStreetMap + OpenFreeMap",fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("Можно менять город сколько угодно: поиск → выбор → OFFLINE.",color=MUTED,fontSize=9.sp)
+            }
             Icon(Icons.Default.WifiOff,null,tint=GREEN)
         }
     }
 }
 
-private fun downloadOffline(context:Context,done:(String)->Unit){
+private fun downloadOffline(context:Context,place:MapPlace,done:(String)->Unit){
     runCatching{
-        val bounds=LatLngBounds.from(43.55,45.90,43.10,45.45)
+        MapLibre.getInstance(context)
+        val bounds=offlineBounds(place)
         val definition=OfflineTilePyramidRegionDefinition(STYLE_URL,bounds,8.0,14.0,1f)
-        OfflineManager.getInstance(context).createOfflineRegion(definition,"TerekDrive-Grozny".toByteArray(),object:OfflineManager.CreateOfflineRegionCallback{
-            override fun onCreate(region:OfflineRegion){region.setDownloadState(OfflineRegion.STATE_ACTIVE);done("Офлайн-загрузка запущена")}
-            override fun onError(error:String){done("Ошибка: $error")}
-        })
+        OfflineManager.getInstance(context).createOfflineRegion(
+            definition,
+            ("TerekDrive-"+place.name.substringBefore(",")).toByteArray(),
+            object:OfflineManager.CreateOfflineRegionCallback{
+                override fun onCreate(region:OfflineRegion){
+                    region.setDownloadState(OfflineRegion.STATE_ACTIVE)
+                    done("Скачивание началось: "+place.name.substringBefore(","))
+                }
+                override fun onError(error:String){
+                    done("Ошибка загрузки: $error")
+                }
+            }
+        )
     }.onFailure{done("Ошибка offline: "+it.message)}
 }
 
@@ -1068,107 +1240,6 @@ private fun applyVoice(tts:TextToSpeech,profile:Assistant,languageIndex:Int){
 }
 
 @Composable
-private fun GarageScreen(season:Season){
-    var selected by rememberSaveable{mutableIntStateOf(0)}
-    val car=cars[selected]
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-        Text("МОЙ ГАРАЖ",fontSize=25.sp,fontWeight=FontWeight.Black)
-        Text("3 машины • характеристики • реальные приборы DRIVE",color=MUTED,fontSize=12.sp)
-        Spacer(Modifier.height(10.dp))
-        Card(colors=CardDefaults.cardColors(containerColor=PANEL),modifier=Modifier.fillMaxWidth()){
-            Column(Modifier.padding(16.dp)){
-                CarVisual(car,Modifier.fillMaxWidth().height(205.dp),season.accent)
-                Spacer(Modifier.height(8.dp));Text(car.name,fontSize=24.sp,fontWeight=FontWeight.Black)
-                Text(car.type+" • "+car.drive,color=season.accent,fontWeight=FontWeight.Bold)
-                Text("Подготовлена для DRIVE режима",color=MUTED,fontSize=10.sp)
-            }
-        }
-        Spacer(Modifier.height(11.dp))
-        LazyRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-            itemsIndexed(cars){i,c->
-                Column(Modifier.width(170.dp).clip(RoundedCornerShape(20.dp)).background(if(i==selected)season.accent.copy(alpha=.12f) else PANEL)
-                    .border(1.dp,if(i==selected)season.accent else Color(0xFF252C34),RoundedCornerShape(20.dp)).clickable{selected=i}.padding(11.dp)){
-                    CarVisual(c,Modifier.fillMaxWidth().height(112.dp),season.accent)
-                    Spacer(Modifier.height(7.dp));Text(c.name,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(c.hp.toString()+" л.с. • "+c.top+" км/ч",color=MUTED,fontSize=10.sp)
-                }
-            }
-        }
-        Spacer(Modifier.height(11.dp))
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
-            SpecCard("МОЩНОСТЬ",car.hp.toString()+" л.с.",RED,Modifier.weight(1f))
-            SpecCard("МОМЕНТ",car.torque.toString()+" Нм",CYAN,Modifier.weight(1f))
-            SpecCard("МАССА",car.weight.toString()+" кг",GREEN,Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
-            SpecCard("МАКС.",car.top.toString()+" км/ч",season.accent,Modifier.weight(1f))
-            SpecCard("ПРИВОД",car.drive,season.accent,Modifier.weight(1f))
-            SpecCard("КЛАСС",car.type,season.accent,Modifier.weight(1f))
-        }
-    }
-}
-
-private fun carPhotoUrl(car:Car):String=when{
-    car.name.contains("Mercedes",true)->"https://images.unsplash.com/photo-1676118497332-94ad05a7c3cf?auto=format&fit=crop&w=1200&q=82"
-    car.name.contains("Lamborghini",true)->"https://images.squarespace-cdn.com/content/v1/6724111128709809c6a40d15/0ba5fde6-cce0-4314-8e56-88d4632bcde6/white%2Bhuracan%2Bfront%2Bside.jpeg"
-    else->"https://images.unsplash.com/photo-1606221791496-ca89dbedb427?auto=format&fit=crop&w=1400&q=84"
-}
-
-@Composable
-private fun CarVisual(car:Car,modifier:Modifier,accent:Color){
-    Box(modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF07090C))){
-        AsyncImage(
-            model=carPhotoUrl(car),
-            contentDescription=car.name,
-            contentScale=ContentScale.Crop,
-            modifier=Modifier.fillMaxSize()
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(Color(0x6605080C),Color.Transparent,Color(0xD907090C))
-                )
-            )
-        )
-        Box(
-            Modifier.align(Alignment.TopStart).padding(10.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xB3070A0E))
-                .border(1.dp,Color.White.copy(alpha=.10f),RoundedCornerShape(10.dp))
-                .padding(horizontal=8.dp,vertical=5.dp)
-        ){
-            Text(
-                "PHOTO GARAGE • ${car.type}",
-                color=Color.White.copy(alpha=.88f),
-                fontSize=8.sp,
-                fontWeight=FontWeight.Black,
-                letterSpacing=.6.sp
-            )
-        }
-        Row(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(11.dp),
-            verticalAlignment=Alignment.Bottom
-        ){
-            Column(Modifier.weight(1f)){
-                Text(car.name,fontSize=17.sp,fontWeight=FontWeight.Black,color=Color.White)
-                Text(
-                    "${car.hp} л.с. • ${car.top} км/ч • ${car.drive}",
-                    color=Color.White.copy(alpha=.78f),
-                    fontSize=9.sp,
-                    fontWeight=FontWeight.Bold
-                )
-            }
-            Box(
-                Modifier.size(34.dp).clip(RoundedCornerShape(11.dp))
-                    .background(accent.copy(alpha=.88f)),
-                contentAlignment=Alignment.Center
-            ){
-                Icon(Icons.Default.DirectionsCar,null,tint=Color.Black,modifier=Modifier.size(19.dp))
-            }
-        }
-    }
-}
-@Composable
 private fun MediaScreen(sound:Boolean,season:Season){
     val context=LocalContext.current;var selected by rememberSaveable{mutableStateOf("")};var playing by rememberSaveable{mutableStateOf(false)}
     var progress by remember{mutableFloatStateOf(0f)};var duration by remember{mutableIntStateOf(0)};var position by remember{mutableIntStateOf(0)};var player by remember{mutableStateOf<MediaPlayer?>(null)}
@@ -1233,7 +1304,7 @@ private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,langua
             }
         }
         Spacer(Modifier.height(8.dp));AssistantSettings(assistant,onAssistant)
-        Spacer(Modifier.height(8.dp));Text("Версия 2.1 • Gena • Weather • Music",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(4.dp))
+        Spacer(Modifier.height(8.dp));Text("Версия 2.4 • Gena • Weather • Music • Offline Maps",color=MUTED,fontSize=10.sp,modifier=Modifier.padding(4.dp))
     }
 }
 
@@ -1257,12 +1328,5 @@ private fun AssistantSettings(selected:Int,onSelect:(Int)->Unit){
                 RadioButton(true,{onSelect(0)});Text("Гена",fontWeight=FontWeight.Bold);Spacer(Modifier.width(8.dp));Text("мужской • спокойный",color=MUTED,fontSize=10.sp)
             }
         }
-    }
-}
-
-@Composable
-private fun SpecCard(title:String,value:String,tint:Color,modifier:Modifier){
-    Card(modifier,colors=CardDefaults.cardColors(containerColor=PANEL)){
-        Column(Modifier.padding(11.dp)){Text(title,color=MUTED,fontSize=8.sp);Text(value,color=tint,fontSize=12.sp,fontWeight=FontWeight.Black)}
     }
 }
