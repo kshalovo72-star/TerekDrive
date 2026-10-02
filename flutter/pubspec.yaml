@@ -8,7 +8,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
-  maplibre_gl: ^0.20.0
+  maplibre_gl: ^0.27.1
   geolocator: ^13.0.2
   flutter_tts: ^4.2.0
   shared_preferences: ^2.3.4
