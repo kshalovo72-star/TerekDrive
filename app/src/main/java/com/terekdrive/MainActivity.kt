@@ -100,7 +100,7 @@ private const val PREF_LAST_UPDATE = "last_notified_update"
 private const val PREF_SEARCH_HISTORY = "search_history"
 private const val GROZNY_LAT = 43.3178
 private const val GROZNY_LON = 45.6985
-private const val APP_VERSION_CODE = 12
+private const val APP_VERSION_CODE = 13
 
 private val BG = Color(0xFF07090C)
 private val PANEL = Color(0xFF10151B)
@@ -659,212 +659,178 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
         label="gps-speed"
     )
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
-        Text("ИЗМЕРЕНИЕ СКОРОСТИ",fontSize=25.sp,fontWeight=FontWeight.Black)
-        Text("GPS • скорость • секундомер • приборы",color=MUTED,fontSize=12.sp)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=14.dp,vertical=10.dp)){
+        Text("СКОРОСТЬ",fontSize=28.sp,fontWeight=FontWeight.Black)
+        Text("РЕАЛЬНАЯ GPS-СКОРОСТЬ • LIVE",color=MUTED,fontSize=12.sp)
         Spacer(Modifier.height(7.dp))
         Row(verticalAlignment=Alignment.CenterVertically){
             Box(Modifier.size(9.dp).clip(RoundedCornerShape(9.dp)).background(if(gpsEnabled && lastFixMs!=0L)GREEN else RED))
-            Spacer(Modifier.width(7.dp));Text(locationState+" • "+if(measuredSpeed<1.5f)"0" else "%.1f".format(measuredSpeed)+" км/ч",color=MUTED,fontSize=10.sp)
+            Spacer(Modifier.width(7.dp))
+            Text(locationState+" • "+if(measuredSpeed<1.5f)"0" else "%.1f".format(measuredSpeed)+" км/ч",color=MUTED,fontSize=10.sp)
         }
-        Spacer(Modifier.height(7.dp))
-        RoadAnimation(speedDisplay,animations,Modifier.fillMaxWidth().height(68.dp))
-        Spacer(Modifier.height(7.dp))
-        SpeedometerGauge(gauges[gauge],speedDisplay,Modifier.fillMaxWidth().height(330.dp),animations)
-        Spacer(Modifier.height(6.dp))
-        LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            itemsIndexed(gauges){i,g->
-                Column(Modifier.width(108.dp).clip(RoundedCornerShape(15.dp)).background(if(i==gauge)g.accent.copy(alpha=.16f) else PANEL)
-                    .border(1.dp,if(i==gauge)g.accent else Color(0xFF252C34),RoundedCornerShape(15.dp)).clickable{gauge=i}.padding(10.dp)){
-                    Text("%02d".format(i+1),color=g.accent,fontSize=10.sp,fontWeight=FontWeight.Black)
-                    Text(g.name,fontSize=10.sp,fontWeight=FontWeight.Bold);Text("0—"+g.max,color=MUTED,fontSize=9.sp)
+        Spacer(Modifier.height(8.dp))
+        SpeedometerGauge(gauges[gauge],speedDisplay,Modifier.fillMaxWidth().height(360.dp),animations)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(9.dp),modifier=Modifier.fillMaxWidth()){
+            Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){
+                Column(Modifier.padding(14.dp)){
+                    Icon(Icons.Default.Speed,null,tint=RED,modifier=Modifier.size(25.dp))
+                    Spacer(Modifier.height(5.dp))
+                    Text("ТЕКУЩАЯ СКОРОСТЬ",color=MUTED,fontSize=9.sp,fontWeight=FontWeight.Bold)
+                    Text("%.0f".format(speedDisplay),fontSize=28.sp,fontWeight=FontWeight.Black)
+                    Text("км/ч",color=MUTED,fontSize=9.sp)
+                }
+            }
+            Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){
+                Column(Modifier.padding(14.dp)){
+                    Icon(Icons.Default.LocationOn,null,tint=RED,modifier=Modifier.size(25.dp))
+                    Spacer(Modifier.height(5.dp))
+                    Text("GPS СКОРОСТЬ",color=MUTED,fontSize=9.sp,fontWeight=FontWeight.Bold)
+                    Text("%.0f".format(measuredSpeed),fontSize=28.sp,fontWeight=FontWeight.Black)
+                    Text("км/ч",color=MUTED,fontSize=9.sp)
+                }
+            }
+            Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){
+                Column(Modifier.padding(14.dp)){
+                    Icon(Icons.Default.Timer,null,tint=RED,modifier=Modifier.size(25.dp))
+                    Spacer(Modifier.height(5.dp))
+                    Text("СЕКУНДОМЕР",color=MUTED,fontSize=9.sp,fontWeight=FontWeight.Bold)
+                    val sec=elapsed/1000
+                    Text("%02d:%02d.%02d".format(sec/60,sec%60,(elapsed%1000)/10),fontSize=20.sp,fontWeight=FontWeight.Black)
                 }
             }
         }
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement=Arrangement.spacedBy(10.dp),modifier=Modifier.fillMaxWidth()){
-            Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){
-                Column(Modifier.padding(16.dp)){Text("%.0f".format(speedDisplay),fontSize=34.sp,fontWeight=FontWeight.Black,color=gauges[gauge].accent);Text("км/ч • GPS",color=MUTED,fontSize=11.sp)}
-            }
-            Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=PANEL)){
-                Column(Modifier.padding(16.dp)){val sec=elapsed/1000;Text("%02d:%02d.%02d".format(sec/60,sec%60,(elapsed%1000)/10),fontSize=24.sp,fontWeight=FontWeight.Black,color=GREEN);Text("секундомер",color=MUTED,fontSize=11.sp)}
-            }
-        }
-        Spacer(Modifier.height(9.dp))
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
-            Button({if(!running)started=SystemClock.elapsedRealtime()-elapsed;running=!running},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text(if(running)"ПАУЗА" else "СТАРТ")}
-            OutlinedButton({running=false;elapsed=0L},Modifier.weight(1f),shape=RoundedCornerShape(15.dp)){Text("СБРОС")}
+        Button(
+            onClick={permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},
+            modifier=Modifier.fillMaxWidth().height(54.dp),shape=RoundedCornerShape(16.dp)
+        ){
+            Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(7.dp))
+            Text(if(gpsEnabled)"GPS-СИГНАЛ ПОДКЛЮЧЁН" else "ВКЛЮЧИТЬ GPS-СКОРОСТЬ")
         }
         Spacer(Modifier.height(8.dp))
-        Button({permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},Modifier.fillMaxWidth(),shape=RoundedCornerShape(15.dp)){
-            Icon(Icons.Default.GpsFixed,null);Spacer(Modifier.width(8.dp));Text(if(gpsEnabled)"ОБНОВИТЬ GPS-ДОСТУП" else "ВКЛЮЧИТЬ GPS-СКОРОСТЬ")
+        Row(horizontalArrangement=Arrangement.spacedBy(9.dp),modifier=Modifier.fillMaxWidth()){
+            OutlinedButton(
+                onClick={running=!running;if(running)started=SystemClock.elapsedRealtime()-elapsed},
+                modifier=Modifier.weight(1f).height(50.dp),shape=RoundedCornerShape(15.dp)
+            ){Text(if(running)"ПАУЗА" else "СТАРТ")}
+            OutlinedButton(
+                onClick={running=false;elapsed=0L},
+                modifier=Modifier.weight(1f).height(50.dp),shape=RoundedCornerShape(15.dp)
+            ){Text("СБРОС")}
         }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
 private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animations:Boolean){
-    val fraction=(speed/gauge.max).coerceIn(0f,1f)
-    val redline=.86f
-    val pulse by rememberInfiniteTransition(label="gauge-pulse").animateFloat(
-        .92f,1f,infiniteRepeatable(tween(if(animations)850 else 2200),RepeatMode.Reverse),label="pulse"
+    val max=gauge.max.toFloat()
+    val fraction=(speed/max).coerceIn(0f,1f)
+    val pulse by rememberInfiniteTransition(label="gauge").animateFloat(
+        .92f,1f,infiniteRepeatable(tween(if(animations)900 else 1800),RepeatMode.Reverse),label="pulse"
     )
     Canvas(modifier){
         val cx=size.width/2f
-        val cy=size.height*.50f
-        val r=minOf(size.width,size.height)*.43f
-        val outer=r+18f
-        val angleFor:(Float)->Double={f->Math.toRadians(135.0+270.0*f)}
-        val point={radius:Float,f:Float->
-            val a=angleFor(f)
-            Offset(cx+cos(a).toFloat()*radius,cy+sin(a).toFloat()*radius)
+        val cy=size.height*.49f
+        val r=minOf(size.width,size.height)*.425f
+        val a0=Math.toRadians(135.0)
+        val sweep=270.0
+        fun p(radius:Float,f:Float):Offset{
+            val a=a0+Math.toRadians(sweep*f)
+            return Offset(cx+cos(a).toFloat()*radius,cy+sin(a).toFloat()*radius)
         }
 
-        // Deep instrument housing.
-        drawCircle(Color(0xFF030507),outer+12f,Offset(cx,cy))
-        drawCircle(Color(0xFF29313A),outer+7f,Offset(cx,cy))
-        drawCircle(Color(0xFF090D12),outer+3f,Offset(cx,cy))
+        // Deep dashboard housing and realistic chrome bezel.
+        drawCircle(Color(0xFF020406),r+28f,Offset(cx,cy))
+        drawCircle(Color(0xFF1A2027),r+24f,Offset(cx,cy))
+        drawCircle(Color(0xFF68727B),r+19f,Offset(cx,cy))
+        drawCircle(Color(0xFF10151B),r+15f,Offset(cx,cy))
+        drawCircle(Color(0xFF252D35),r+9f,Offset(cx,cy))
+        drawCircle(Color(0xFF070A0E),r+5f,Offset(cx,cy))
+
+        // Face: subtle radial gradient, like a real instrument.
         drawCircle(
             Brush.radialGradient(
-                listOf(Color(0xFF1A2028),Color(0xFF0B0F14),Color(0xFF05070A)),
-                center=Offset(cx-r*.18f,cy-r*.25f),
-                radius=r*1.25f
+                listOf(Color(0xFF151B22),Color(0xFF0A0E13),Color(0xFF05070A)),
+                center=Offset(cx-r*.20f,cy-r*.30f),
+                radius=r*1.35f
             ),r,Offset(cx,cy)
         )
-        drawCircle(Color.White.copy(alpha=.025f),r-7f,Offset(cx,cy))
+        drawCircle(Color.White.copy(alpha=.025f),r-4f,Offset(cx,cy))
 
-        // Metallic outer highlight.
-        drawArc(Color(0xFF5A646E),135f,270f,false,style=Stroke(width=4f))
-        drawArc(Color(0xFF11161C),139f,262f,false,style=Stroke(width=9f))
-
-        // Redline zone.
-        drawArc(
-            Color(0xFF8D171B).copy(alpha=.82f),
-            135f+270f*redline,
-            270f*(1f-redline),
-            false,
-            style=Stroke(width=15f)
-        )
+        // Chrome highlight and redline.
+        drawArc(Color.White.copy(alpha=.42f),205f,76f,false,style=Stroke(width=3.5f))
+        drawArc(Color(0xFF303943),135f,270f,false,style=Stroke(width=2f))
+        drawArc(RED.copy(alpha=.92f),135f+270f*.86f,270f*.14f,false,style=Stroke(width=10f))
         if(fraction>0f){
-            val liveColor=when{
-                fraction>=redline->RED
-                fraction>=.72f->Color(0xFFFF7A00)
-                else->Color(0xFFE9EDF0)
-            }
-            drawArc(liveColor.copy(alpha=.16f),135f,270f*fraction,false,style=Stroke(width=13f))
-            drawArc(liveColor,135f,270f*fraction,false,style=Stroke(width=3f))
+            val live=if(fraction>.86f)RED else Color.White
+            drawArc(live.copy(alpha=.16f),135f,270f*fraction,false,style=Stroke(width=15f))
+            drawArc(live.copy(alpha=.92f),135f,270f*fraction,false,style=Stroke(width=3f))
         }
 
-        // 60 precise ticks, with longer OEM-style major marks.
+        // 0–300 OEM scale.
         for(i in 0..60){
             val f=i/60f
-            val p1=point(r-15f,f)
-            val p2=point(r-(if(i%5==0)38f else 27f),f)
-            val red=f>=redline
+            val pt=p(r-10f,f)
+            val inner=p(r-(if(i%5==0)34f else 23f),f)
+            val red=i>=52
             val active=f<=fraction
-            val c=when{
-                red->RED
-                active->Color(0xFFE6EBEF)
-                else->Color(0xFF68727C)
-            }
-            drawLine(
-                c.copy(alpha=if(red||active).95f else .58f),
-                p1,p2,
-                if(i%5==0)2.7f else 1.15f,
-                StrokeCap.Butt
-            )
+            val c=when{red->RED;active->Color(0xFFE9EDF1);else->Color(0xFF68727C)}
+            drawLine(c.copy(alpha=if(red||active).95f else .65f),pt,inner,
+                if(i%5==0)2.4f else 1.1f,StrokeCap.Butt)
         }
 
-        // Numeric scale: 0..300, exactly like a real road-car cluster.
-        val numberPaint=android.graphics.Paint().apply{
-            isAntiAlias=true
-            color=Color(0xFFE8EDF1).toArgb()
-            textAlign=android.graphics.Paint.Align.CENTER
-            textSize=15f
+        val paint=android.graphics.Paint().apply{
+            isAntiAlias=true;color=Color(0xFFE9EDF1).toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=17f
             typeface=android.graphics.Typeface.create("sans-serif-condensed",android.graphics.Typeface.BOLD)
         }
         for(i in 0..10){
             val f=i/10f
-            val p=point(r-62f,f)
-            drawContext.canvas.nativeCanvas.drawText(
-                (gauge.max*i/10).toString(),p.x,p.y+5f,numberPaint
-            )
+            val q=p(r-56f,f)
+            drawContext.canvas.nativeCanvas.drawText((gauge.max*i/10).toString(),q.x,q.y+6f,paint)
         }
-
-        val labelPaint=android.graphics.Paint().apply{
-            isAntiAlias=true;color=Color(0xFF9DA7B0).toArgb()
-            textAlign=android.graphics.Paint.Align.CENTER;textSize=9f
+        val small=android.graphics.Paint().apply{
+            isAntiAlias=true;color=Color(0xFFB6BEC6).toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=10f
             typeface=android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD)
         }
-        drawContext.canvas.nativeCanvas.drawText("km/h",cx,cy-r*.46f,labelPaint)
-        drawContext.canvas.nativeCanvas.drawText("REDLINE",cx,cy-r*.30f,labelPaint)
+        drawContext.canvas.nativeCanvas.drawText("km/h",cx,cy-r*.47f,small)
+        drawContext.canvas.nativeCanvas.drawText("GPS  •  LIVE",cx,cy-r*.39f,small)
 
-        // Digital readout sits low and never gets confused with the needle.
-        val boxW=r*.62f
-        val boxH=r*.24f
-        val boxTop=cy+r*.25f
-        drawRoundRect(
-            Color(0xFF05080B),
-            Offset(cx-boxW/2f,boxTop),
-            androidx.compose.ui.geometry.Size(boxW,boxH),
-            cornerRadius=androidx.compose.ui.geometry.CornerRadius(12f,12f)
-        )
-        drawRoundRect(
-            Color(0xFF39424B).copy(alpha=.7f),
-            Offset(cx-boxW/2f,boxTop),
-            androidx.compose.ui.geometry.Size(boxW,boxH),
-            cornerRadius=androidx.compose.ui.geometry.CornerRadius(12f,12f),
-            style=Stroke(width=1.2f)
-        )
-        val digitalPaint=android.graphics.Paint().apply{
-            isAntiAlias=true
-            color=Color.White.toArgb()
-            textAlign=android.graphics.Paint.Align.CENTER
-            textSize=42f
+        // Digital window.
+        val bw=r*.60f; val bh=r*.235f; val top=cy+r*.23f
+        drawRoundRect(Color(0xFF020507),Offset(cx-bw/2f,top),
+            androidx.compose.ui.geometry.Size(bw,bh),
+            cornerRadius=androidx.compose.ui.geometry.CornerRadius(14f,14f))
+        drawRoundRect(Color(0xFF252D35),Offset(cx-bw/2f,top),
+            androidx.compose.ui.geometry.Size(bw,bh),
+            cornerRadius=androidx.compose.ui.geometry.CornerRadius(14f,14f),style=Stroke(width=1.5f))
+        val digital=android.graphics.Paint().apply{
+            isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=43f
             typeface=android.graphics.Typeface.create("sans-serif-condensed",android.graphics.Typeface.BOLD)
         }
-        drawContext.canvas.nativeCanvas.drawText("%.0f".format(speed),cx,boxTop+boxH*.67f,digitalPaint)
-        val unitPaint=android.graphics.Paint().apply{
-            isAntiAlias=true;color=RED.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=8f
-            typeface=android.graphics.Typeface.DEFAULT_BOLD
-        }
-        drawContext.canvas.nativeCanvas.drawText("GPS  •  LIVE",cx,boxTop+boxH+13f,unitPaint)
+        drawContext.canvas.nativeCanvas.drawText("%.0f".format(speed),cx,top+bh*.68f,digital)
+        drawContext.canvas.nativeCanvas.drawText("km/h",cx,top+bh*.92f,small)
 
-        // Short, weighted red needle with a proper central hub.
-        val needleA=angleFor(fraction)
-        val needleLen=r*.70f
-        val tip=Offset(cx+cos(needleA).toFloat()*needleLen,cy+sin(needleA).toFloat()*needleLen)
-        val tail=Offset(cx-cos(needleA).toFloat()*r*.11f,cy-sin(needleA).toFloat()*r*.11f)
-        drawLine(Color.Black.copy(alpha=.75f),tail,tip,8f,StrokeCap.Round)
-        drawLine(RED.copy(alpha=.92f),tail,tip,4.2f,StrokeCap.Round)
-        drawLine(Color.White.copy(alpha=.82f),Offset(cx,cy),tip,1.1f,StrokeCap.Round)
-        drawCircle(Color(0xFF080B0E),16f,Offset(cx,cy))
-        drawCircle(Color(0xFF69747D),11f,Offset(cx,cy))
-        drawCircle(RED,7f,Offset(cx,cy))
-        drawCircle(Color.White.copy(alpha=.85f),2f,Offset(cx-1.5f,cy-1.5f))
+        // Short needle + hub.
+        val ang=a0+Math.toRadians(sweep*fraction)
+        val tip=Offset(cx+cos(ang).toFloat()*r*.69f,cy+sin(ang).toFloat()*r*.69f)
+        val tail=Offset(cx-cos(ang).toFloat()*r*.09f,cy-sin(ang).toFloat()*r*.09f)
+        drawLine(Color.Black.copy(alpha=.75f),tail,tip,7f,StrokeCap.Round)
+        drawLine(RED.copy(alpha=.96f*pulse),tail,tip,3.8f,StrokeCap.Round)
+        drawLine(Color.White.copy(alpha=.78f),Offset(cx,cy),tip,1f,StrokeCap.Round)
+        drawCircle(Color(0xFF080B0F),15f,Offset(cx,cy))
+        drawCircle(Color(0xFF69747D),10f,Offset(cx,cy))
+        drawCircle(RED,6f,Offset(cx,cy))
+        drawCircle(Color.White.copy(alpha=.9f),2f,Offset(cx-1f,cy-1f))
 
         // Glass reflection.
-        drawArc(
-            Brush.linearGradient(listOf(Color.White.copy(alpha=.14f),Color.Transparent)),
-            205f,80f,false,style=Stroke(width=10f)
-        )
-        drawArc(
-            Color.White.copy(alpha=.035f),
-            215f,65f,false,style=Stroke(width=2f)
-        )
-
+        drawArc(Color.White.copy(alpha=.10f),200f,88f,false,style=Stroke(width=11f))
+        val status=if(fraction>=.86f)"REDLINE" else if(speed<1f)"GPS • 0" else "GPS LIVE"
         val statusPaint=android.graphics.Paint().apply{
-            isAntiAlias=true
-            color=if(fraction>=redline)RED.toArgb() else MUTED.toArgb()
-            textAlign=android.graphics.Paint.Align.CENTER;textSize=8f
-            typeface=android.graphics.Typeface.DEFAULT_BOLD
-        }
-        val status=when{
-            speed<1f->"СТОЯНКА  •  GPS = 0"
-            fraction>=redline->"REDLINE"
-            fraction>=.72f->"HIGH SPEED"
-            else->"GPS LIVE"
+            isAntiAlias=true;color=(if(fraction>=.86f)RED else MUTED).toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=9f;typeface=android.graphics.Typeface.DEFAULT_BOLD
         }
         drawContext.canvas.nativeCanvas.drawText(status,cx,cy+r*.78f,statusPaint)
     }
