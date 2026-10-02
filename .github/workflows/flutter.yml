@@ -19,6 +19,9 @@ jobs:
       - name: Generate Android runner
         working-directory: flutter
         run: flutter create --platforms=android --org com.terekdrive --project-name terek_drive .
+      - name: Clean Flutter workspace
+        working-directory: flutter
+        run: flutter clean
       - name: Dependencies
         working-directory: flutter
         run: flutter pub get
