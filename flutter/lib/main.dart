@@ -109,7 +109,10 @@ class _DriveShellState extends State<DriveShell> {
       SettingsPage(sound: sound, season: season, gaugeStyle: gaugeStyle, onSound: toggleSound, onSeason: setSeason, onGauge: setGauge),
     ];
     return Scaffold(
-      body: SafeArea(child: pages[tab]),
+      body: Stack(children: [
+        SafeArea(child: pages[tab]),
+        Positioned.fill(child: IgnorePointer(child: SeasonalEffects(season: season))),
+      ]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,
         onDestinationSelected: (i) => setState(() => tab = i),
@@ -157,7 +160,6 @@ class _MapPageState extends State<MapPage> {
         child: const Icon(Icons.my_location),
       ),
     ),
-    Positioned.fill(child: IgnorePointer(child: SeasonalEffects(season: widget.season))),
   ]);
 }
 
@@ -366,46 +368,125 @@ class SeasonalEffects extends StatefulWidget {
   const SeasonalEffects({super.key, required this.season});
   @override State<SeasonalEffects> createState() => _SeasonalEffectsState();
 }
+
 class _SeasonalEffectsState extends State<SeasonalEffects> with SingleTickerProviderStateMixin {
   late final AnimationController animation;
-  final random = math.Random(7);
-  late final List<Offset> seeds;
-  @override void initState() {
+  final random = math.Random(73);
+  late final List<SeasonParticle> particles;
+
+  @override
+  void initState() {
     super.initState();
-    seeds = List.generate(42, (_) => Offset(random.nextDouble(), random.nextDouble()));
-    animation = AnimationController(vsync: this, duration: const Duration(seconds: 18))..repeat();
+    particles = List.generate(70, (i) => SeasonParticle(
+      x: random.nextDouble(),
+      y: random.nextDouble(),
+      size: 1.5 + random.nextDouble() * 4,
+      phase: random.nextDouble() * math.pi * 2,
+      speed: .35 + random.nextDouble() * .8,
+      rotation: random.nextDouble() * math.pi,
+    ));
+    animation = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
   }
-  @override void dispose() { animation.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => IgnorePointer(
-    child: AnimatedBuilder(
-      animation: animation,
-      builder: (_, __) => CustomPaint(painter: SeasonPainter(widget.season, seeds, animation.value)),
+
+  @override
+  void dispose() { animation.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: animation,
+    builder: (_, __) => CustomPaint(
+      painter: SeasonPainter(widget.season, particles, animation.value),
+      child: const SizedBox.expand(),
     ),
   );
 }
+
+class SeasonParticle {
+  final double x, y, size, phase, speed, rotation;
+  const SeasonParticle({required this.x, required this.y, required this.size, required this.phase, required this.speed, required this.rotation});
+}
+
 class SeasonPainter extends CustomPainter {
-  final Season season; final List<Offset> seeds; final double t;
-  SeasonPainter(this.season, this.seeds, this.t);
-  @override void paint(Canvas canvas, Size size) {
-    final paint = Paint();
-    final overlay = Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
-      colors: [season == Season.winter ? Colors.blueGrey.withValues(alpha:.10) : season == Season.summer ? Colors.amber.withValues(alpha:.06) : Colors.orange.withValues(alpha:.05), Colors.transparent]).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, overlay);
-    for (var i=0; i<seeds.length; i++) {
-      final s=seeds[i]; final x=(s.dx + math.sin(t*math.pi*2+i)*.015)*size.width;
-      final y=((s.dy+t*(season==Season.winter?.10:season==Season.autumn?.055:season==Season.spring?.07:.025))%1)*size.height;
-      if (season == Season.winter) {
-        paint.color=Colors.white.withValues(alpha:.65); canvas.drawCircle(Offset(x,y), 1.5+(i%3), paint);
-      } else if (season == Season.autumn) {
-        paint.color=Colors.orange.withValues(alpha:.55); canvas.drawOval(Rect.fromCenter(center:Offset(x,y),width:7,height:4), paint);
-      } else if (season == Season.spring) {
-        paint.color=Colors.pink.withValues(alpha:.45); canvas.drawCircle(Offset(x,y), 2.2, paint);
-      } else {
-        paint.color=Colors.amber.withValues(alpha:.18); canvas.drawCircle(Offset(x,y), 1.5, paint);
+  final Season season;
+  final List<SeasonParticle> particles;
+  final double t;
+  SeasonPainter(this.season, this.particles, this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint();
+    final top = switch (season) {
+      Season.winter => Colors.blueGrey.withValues(alpha: .13),
+      Season.autumn => Colors.deepOrange.withValues(alpha: .09),
+      Season.spring => Colors.pink.withValues(alpha: .06),
+      Season.summer => Colors.amber.withValues(alpha: .08),
+    };
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [top, Colors.transparent, Colors.transparent],
+        stops: const [.0, .38, 1],
+      ).createShader(Offset.zero & size),
+    );
+
+    if (season == Season.summer) {
+      p.color = Colors.amber.withValues(alpha: .08);
+      for (var i = 0; i < 5; i++) {
+        final x = size.width * (.12 + i * .22);
+        canvas.drawCircle(Offset(x, size.height * .10), size.width * .12, p);
       }
     }
+
+    for (var i = 0; i < particles.length; i++) {
+      final s = particles[i];
+      final drift = math.sin(t * math.pi * 2 * s.speed + s.phase);
+      final x = (s.x * size.width + drift * (season == Season.autumn ? 28 : 10)) % size.width;
+      final travel = (s.y + t * s.speed * (season == Season.winter ? .55 : .42)) % 1;
+      final y = travel * size.height;
+
+      if (season == Season.winter) {
+        p.color = Colors.white.withValues(alpha: .62 + (i % 4) * .07);
+        canvas.drawCircle(Offset(x, y), s.size * .65, p);
+        p.color = Colors.white.withValues(alpha: .08);
+        canvas.drawCircle(Offset(x, y), s.size * 2.2, p);
+      } else if (season == Season.autumn) {
+        p.color = [Colors.deepOrange, Colors.orange, Colors.amber, Colors.brown][i % 4].withValues(alpha: .72);
+        final leaf = Path()
+          ..moveTo(x, y - s.size)
+          ..quadraticBezierTo(x + s.size * 1.7, y - s.size * .25, x, y + s.size)
+          ..quadraticBezierTo(x - s.size * 1.7, y - s.size * .25, x, y - s.size);
+        canvas.save();
+        canvas.translate(0, 0);
+        canvas.rotate(s.rotation + drift * .5);
+        canvas.drawPath(leaf, p);
+        canvas.restore();
+      } else if (season == Season.spring) {
+        p.color = [Colors.pinkAccent, Colors.white, Colors.purpleAccent][i % 3].withValues(alpha: .45);
+        canvas.drawCircle(Offset(x, y), s.size * .55, p);
+        canvas.drawCircle(Offset(x + s.size, y + s.size * .3), s.size * .35, p);
+      }
+    }
+
+    if (season == Season.winter) {
+      final snow = Path()..moveTo(0, size.height);
+      for (var x = 0.0; x <= size.width; x += 28) {
+        snow.lineTo(x, size.height - 22 - math.sin(x * .035) * 7 - math.sin(x * .09) * 3);
+      }
+      snow.lineTo(size.width, size.height)..close();
+      p.color = Colors.white.withValues(alpha: .16);
+      canvas.drawPath(snow, p);
+      p.color = Colors.white.withValues(alpha: .07);
+      canvas.drawRect(Rect.fromLTWH(0, size.height - 34, size.width, 34), p);
+    } else if (season == Season.autumn) {
+      p.color = Colors.orange.withValues(alpha: .035);
+      canvas.drawRect(Rect.fromLTWH(0, size.height - 26, size.width, 26), p);
+    }
   }
-  @override bool shouldRepaint(covariant SeasonPainter old) => old.t != t || old.season != season;
+
+  @override
+  bool shouldRepaint(covariant SeasonPainter old) => old.t != t || old.season != season;
 }
 
 Season _seasonForDate(DateTime d) { if (d.month >= 3 && d.month <= 5) return Season.spring; if (d.month >= 6 && d.month <= 8) return Season.summer; if (d.month >= 9 && d.month <= 11) return Season.autumn; return Season.winter; }
