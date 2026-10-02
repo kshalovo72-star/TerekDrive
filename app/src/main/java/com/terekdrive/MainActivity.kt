@@ -713,7 +713,6 @@ private fun DriveScreen(sound:Boolean,animations:Boolean,assistant:Int,language:
 @Composable
 private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animations:Boolean){
     val fraction=(speed/gauge.max).coerceIn(0f,1f)
-    val danger=(fraction-.58f).coerceIn(0f,1f)/.42f
     val active=when{
         fraction>=.86f->RED
         fraction>=.72f->Color(0xFFFF6D00)
@@ -721,102 +720,131 @@ private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animation
         else->gauge.accent
     }
     val pulse by rememberInfiniteTransition(label="gauge-pulse").animateFloat(
-        .94f,1.08f,infiniteRepeatable(tween(if(animations)650 else 1800),RepeatMode.Reverse),label="pulse"
+        .96f,1.04f,infiniteRepeatable(tween(if(animations)700 else 1800),RepeatMode.Reverse),label="pulse"
     )
     Canvas(modifier){
         val center=Offset(size.width/2f,size.height/2f)
         val r=minOf(size.width,size.height)*.39f
-        val outer=r+18f
-        drawCircle(Color(0xFF05080C),outer+7f,center)
-        drawCircle(Color(0xFF0C1117),outer,center)
-        drawCircle(Color(0xFF151B22),r,center)
+        val bezel=r+30f
+        val face=r+10f
 
-        if(danger>0f){
-            val glow=active.copy(alpha=(.08f+.15f*danger)*(if(animations)pulse else 1f))
-            drawCircle(glow,r+16f+danger*7f,center)
-            drawCircle(active.copy(alpha=.05f+.08f*danger),r+28f*danger,center)
-        }else{
-            drawCircle(gauge.accent.copy(alpha=.16f),r+10f,center)
+        // Реалистичный металлический обод и стекло приборки.
+        drawCircle(Color(0xFF020305),bezel+8f,center)
+        drawCircle(Color(0xFF1E252D),bezel+4f,center)
+        drawCircle(Color(0xFF070A0E),bezel,center)
+        drawCircle(Color(0xFF111820),face,center)
+        drawCircle(Color(0xFF090D12),r,center)
+        drawCircle(Color.White.copy(alpha=.025f),r-5f,center)
+
+        if(fraction>.72f){
+            drawCircle(active.copy(alpha=.045f*if(animations)pulse else .045f),bezel+12f,center)
         }
 
-        // Базовая шкала и активная зона. Чем выше реальная GPS-скорость, тем больше красного.
-        drawArc(Color(0xFF29313A),135f,270f,false,style=Stroke(width=20f))
-        for(i in 0..60){
-            val f=i/60f
+        // Шкала и красная зона.
+        drawArc(Color(0xFF303841),135f,270f,false,style=Stroke(width=18f))
+        drawArc(Color(0xFF7A1714).copy(alpha=.75f),135f+270f*.86f,270f*.14f,false,style=Stroke(width=18f))
+        for(i in 0..72){
+            val f=i/72f
             val angle=Math.toRadians(135.0+270.0*f)
-            val major=i%5==0
-            val tickColor=when{
-                f<=fraction -> if(f>.72f)RED else if(f>.58f)Color(0xFFFFB000) else gauge.accent
-                f>.86f -> RED.copy(alpha=.42f)
-                else -> gauge.accent.copy(alpha=.38f)
-            }
-            val r1=r-8f
-            val r2=r-if(major)29f else 18f
+            val major=i%6==0
+            val red=f>=.86f
+            val tick=if(red) RED else if(f<=fraction) active else Color(0xFF77818B)
+            val r1=r-10f
+            val r2=r-if(major)34f else 22f
             drawLine(
-                tickColor.copy(alpha=if(f<=fraction).95f else tickColor.alpha),
+                tick.copy(alpha=if(f<=fraction || red) .95f else .52f),
                 Offset(center.x+cos(angle).toFloat()*r1,center.y+sin(angle).toFloat()*r1),
                 Offset(center.x+cos(angle).toFloat()*r2,center.y+sin(angle).toFloat()*r2),
-                if(major)4.2f else 1.8f
+                if(major)3.4f else 1.35f
             )
         }
 
-        // Активная дуга имеет физический смысл: это доля текущей скорости от предела выбранной шкалы.
-        val segments=90
-        for(i in 0 until segments){
-            val sf=i/segments.toFloat()
-            if(sf<=fraction){
-                val col=when{
-                    sf>.86f->RED
-                    sf>.72f->Color(0xFFFF6D00)
-                    sf>.58f->Color(0xFFFFB000)
-                    else->gauge.accent
-                }
-                drawArc(col.copy(alpha=.96f),135f+270f*sf,270f/segments+.8f,false,style=Stroke(width=9f))
-            }
+        // Небольшая активная подсветка шкалы по фактической GPS-скорости.
+        if(fraction>0f){
+            drawArc(active.copy(alpha=.20f),135f,270f*fraction,false,style=Stroke(width=11f))
+            drawArc(active,135f,270f*fraction,false,style=Stroke(width=4f))
         }
 
-        val labelPaint=android.graphics.Paint().apply{isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=15f;typeface=android.graphics.Typeface.DEFAULT_BOLD}
-        for(i in 0..6){
-            val value=gauge.max*i/6
-            val angle=Math.toRadians(135.0+270.0*(i/6f))
-            val rr=r-52f
-            drawContext.canvas.nativeCanvas.drawText(value.toString(),center.x+cos(angle).toFloat()*rr,center.y+sin(angle).toFloat()*rr+5f,labelPaint)
-        }
-
-        val needleAngle=Math.toRadians(135.0+270.0*fraction)
-        val needleLength=r*.73f
-        val tip=Offset(center.x+cos(needleAngle).toFloat()*needleLength,center.y+sin(needleAngle).toFloat()*needleLength)
-        drawLine(active.copy(alpha=.18f+.20f*danger),center,tip,14f+(danger*7f),StrokeCap.Round)
-        drawLine(active,center,tip,5.5f+(danger*2f),StrokeCap.Round)
-        drawCircle(active,13f+(danger*2f),center)
-        drawCircle(Color(0xFF0B0F14),6f,center)
-
-        val speedPaint=android.graphics.Paint().apply{
-            isAntiAlias=true;color=if(danger>.72f)active.toArgb() else Color.White.toArgb()
-            textAlign=android.graphics.Paint.Align.CENTER;textSize=55f
+        val labelPaint=android.graphics.Paint().apply{
+            isAntiAlias=true;color=Color(0xFFE8EDF2).toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=14f
             typeface=android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD)
         }
-        drawContext.canvas.nativeCanvas.drawText("%.0f".format(speed),center.x,center.y+20f,speedPaint)
+        for(i in 0..8){
+            val value=gauge.max*i/8
+            val f=i/8f
+            val angle=Math.toRadians(135.0+270.0*f)
+            val rr=r-54f
+            drawContext.canvas.nativeCanvas.drawText(
+                value.toString(),
+                center.x+cos(angle).toFloat()*rr,
+                center.y+sin(angle).toFloat()*rr+5f,
+                labelPaint
+            )
+        }
 
-        val unitPaint=android.graphics.Paint().apply{isAntiAlias=true;color=active.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=15f;typeface=android.graphics.Typeface.DEFAULT_BOLD}
-        drawContext.canvas.nativeCanvas.drawText("km/h • GPS",center.x,center.y+43f,unitPaint)
+        // Красная зона с надписью MAX / REDLINE.
+        val smallPaint=android.graphics.Paint().apply{
+            isAntiAlias=true;color=Color(0xFF7F8A95).toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=9f
+            typeface=android.graphics.Typeface.DEFAULT_BOLD
+        }
+        drawContext.canvas.nativeCanvas.drawText("REDLINE",center.x,center.y-r*.62f,smallPaint)
+
+        // Центральный цифровой экран.
+        drawRoundRect(
+            Color(0xFF05080B),
+            Offset(center.x-r*.39f,center.y+r*.18f),
+            androidx.compose.ui.geometry.Size(r*.78f,r*.29f),
+            cornerRadius=androidx.compose.ui.geometry.CornerRadius(14f,14f)
+        )
+        drawRoundRect(
+            Color(0xFF1B232B).copy(alpha=.8f),
+            Offset(center.x-r*.39f,center.y+r*.18f),
+            androidx.compose.ui.geometry.Size(r*.78f,r*.29f),
+            cornerRadius=androidx.compose.ui.geometry.CornerRadius(14f,14f),
+            style=Stroke(width=1.2f)
+        )
+
+        val speedPaint=android.graphics.Paint().apply{
+            isAntiAlias=true;color=if(fraction>=.72f)active.toArgb() else Color.White.toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=52f
+            typeface=android.graphics.Typeface.create("sans-serif-condensed",android.graphics.Typeface.BOLD)
+        }
+        drawContext.canvas.nativeCanvas.drawText("%.0f".format(speed),center.x,center.y+r*.42f,speedPaint)
+
+        val unitPaint=android.graphics.Paint().apply{
+            isAntiAlias=true;color=active.toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=11f
+            typeface=android.graphics.Typeface.DEFAULT_BOLD
+        }
+        drawContext.canvas.nativeCanvas.drawText("km/h  •  GPS LIVE",center.x,center.y+r*.54f,unitPaint)
+
+        // Реалистичная стрелка: тень, тонкий стержень и металлическая ступица.
+        val needleAngle=Math.toRadians(135.0+270.0*fraction)
+        val needleLength=r*.76f
+        val tip=Offset(center.x+cos(needleAngle).toFloat()*needleLength,center.y+sin(needleAngle).toFloat()*needleLength)
+        val tail=Offset(center.x-cos(needleAngle).toFloat()*r*.16f,center.y-sin(needleAngle).toFloat()*r*.16f)
+        drawLine(Color.Black.copy(alpha=.65f),tail,tip,10f,StrokeCap.Round)
+        drawLine(active.copy(alpha=.55f),tail,tip,6.5f,StrokeCap.Round)
+        drawLine(Color.White.copy(alpha=.88f),center,tip,2.1f,StrokeCap.Round)
+        drawCircle(Color(0xFF05070A),17f,center)
+        drawCircle(Color(0xFF4B555F),12f,center)
+        drawCircle(active,7f,center)
+        drawCircle(Color.White.copy(alpha=.75f),2.5f,Offset(center.x-2f,center.y-2f))
 
         val statusPaint=android.graphics.Paint().apply{
-            isAntiAlias=true;color=if(danger>.72f)active.toArgb() else Color(0xFF8995A3).toArgb()
-            textAlign=android.graphics.Paint.Align.CENTER;textSize=10f
+            isAntiAlias=true;color=if(fraction>=.72f)active.toArgb() else MUTED.toArgb()
+            textAlign=android.graphics.Paint.Align.CENTER;textSize=9f
+            typeface=android.graphics.Typeface.DEFAULT_BOLD
         }
         val status=when{
-            speed<1f->"СТОИМ • GPS = 0 КМ/Ч"
-            danger>.86f->"ВЫСОКАЯ СКОРОСТЬ • LIVE GPS"
-            danger>.55f->"РАЗГОН • LIVE GPS"
-            else->"LIVE • GPS SPEED"
+            speed<1f->"СТОЯНКА  •  GPS = 0"
+            fraction>=.86f->"REDLINE  •  СНИЖАЙТЕ СКОРОСТЬ"
+            fraction>=.58f->"ВЫСОКАЯ СКОРОСТЬ  •  LIVE GPS"
+            else->"АКТИВНЫЙ GPS  •  РЕАЛЬНАЯ СКОРОСТЬ"
         }
-        drawContext.canvas.nativeCanvas.drawText(status,center.x,center.y+r*.62f,statusPaint)
-
-        if(danger>.78f && animations){
-            val flash=(pulse-.94f)/.14f
-            drawCircle(RED.copy(alpha=.05f+.08f*flash),outer+4f,center)
-        }
+        drawContext.canvas.nativeCanvas.drawText(status,center.x,center.y+r*.70f,statusPaint)
     }
 }
 
@@ -1043,23 +1071,95 @@ private fun GarageScreen(season:Season){
 
 @Composable
 private fun CarVisual(car:Car,modifier:Modifier,accent:Color){
-    Canvas(modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF080B0F))){
-        val cx=size.width/2f;val y=size.height*.57f
-        val w=size.width*when(car.type){"SUPER"->.76f;"SUV"->.72f;"MUSCLE"->.80f;else->.78f}
-        val h=size.height*when(car.type){"SUV"->.30f;else->.24f}
-        drawOval(color=Color.Black.copy(alpha=.65f),topLeft=Offset(cx-w*.52f,y+h*.30f),size=androidx.compose.ui.geometry.Size(w*1.04f,h*.28f))
-        drawRoundRect(Color(0xFF161D25),Offset(cx-w/2,y-h/2),androidx.compose.ui.geometry.Size(w,h),cornerRadius=androidx.compose.ui.geometry.CornerRadius(20f,20f))
-        val cabinW=w*.48f
-        val cabinPath=Path().apply{
-            moveTo(cx-cabinW/2,y-h*.45f);lineTo(cx-cabinW*.32f,y-h*.95f);lineTo(cx+cabinW*.30f,y-h*.95f);lineTo(cx+cabinW/2,y-h*.45f);close()
+    Canvas(modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF06080B))){
+        val cx=size.width/2f
+        val base=size.height*.69f
+        val scale=when(car.type){"SUV"->1.02f;"MUSCLE"->1.08f;"SUPER"->.96f;else->1f}
+        val w=size.width*.70f*scale
+        val h=size.height*.34f*scale
+        val left=cx-w/2f
+        val right=cx+w/2f
+
+        // Дорожная тень.
+        drawOval(
+            color=Color.Black.copy(alpha=.72f),
+            topLeft=Offset(left-w*.08f,base+h*.17f),
+            size=androidx.compose.ui.geometry.Size(w*1.16f,h*.34f)
+        )
+
+        // Кузов: низкий капот, плечи и задние боковины.
+        val body=Path().apply{
+            moveTo(left+w*.03f,base-h*.05f)
+            lineTo(left+w*.11f,base-h*.30f)
+            lineTo(left+w*.29f,base-h*.45f)
+            lineTo(left+w*.40f,base-h*.67f)
+            lineTo(left+w*.63f,base-h*.76f)
+            lineTo(left+w*.78f,base-h*.60f)
+            lineTo(right-w*.06f,base-h*.30f)
+            lineTo(right-w*.01f,base+h*.03f)
+            lineTo(right-w*.10f,base+h*.18f)
+            lineTo(left+w*.10f,base+h*.18f)
+            close()
         }
-        drawPath(cabinPath,Color(0xFF202D3A))
-        drawLine(accent.copy(alpha=.9f),Offset(cx-w*.42f,y-h*.18f),Offset(cx+w*.42f,y-h*.18f),3f)
-        drawRoundRect(accent.copy(alpha=.85f),Offset(cx-w*.43f,y+h*.18f),androidx.compose.ui.geometry.Size(w*.16f,h*.10f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(8f,8f))
-        drawRoundRect(accent.copy(alpha=.85f),Offset(cx+w*.27f,y+h*.18f),androidx.compose.ui.geometry.Size(w*.16f,h*.10f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(8f,8f))
-        drawCircle(Color(0xFF030507),h*.27f,Offset(cx-w*.31f,y+h*.42f));drawCircle(Color(0xFF030507),h*.27f,Offset(cx+w*.31f,y+h*.42f))
-        drawCircle(Color(0xFF4B5662),h*.11f,Offset(cx-w*.31f,y+h*.42f));drawCircle(Color(0xFF4B5662),h*.11f,Offset(cx+w*.31f,y+h*.42f))
-        drawContext.canvas.nativeCanvas.drawText(car.name.uppercase(),cx,size.height*.91f,android.graphics.Paint().apply{isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER;textSize=10f;typeface=android.graphics.Typeface.DEFAULT_BOLD})
+        drawPath(body,Color(0xFF242B33))
+        drawPath(body,accent.copy(alpha=.16f),style=Stroke(width=2.5f))
+
+        // Крыша и стёкла.
+        val cabin=Path().apply{
+            moveTo(left+w*.34f,base-h*.43f)
+            lineTo(left+w*.43f,base-h*.67f)
+            lineTo(left+w*.61f,base-h*.72f)
+            lineTo(left+w*.76f,base-h*.56f)
+            lineTo(left+w*.80f,base-h*.40f)
+            close()
+        }
+        drawPath(cabin,Color(0xFF111A22))
+        drawPath(cabin,Color(0xFF4E6474).copy(alpha=.42f),style=Stroke(width=1.5f))
+
+        // Блик по капоту.
+        drawLine(Color.White.copy(alpha=.18f),Offset(left+w*.17f,base-h*.18f),Offset(left+w*.61f,base-h*.50f),3f,StrokeCap.Round)
+        drawLine(Color.White.copy(alpha=.08f),Offset(left+w*.08f,base-h*.02f),Offset(right-w*.16f,base-h*.05f),5f,StrokeCap.Round)
+
+        // Бампер и решётка.
+        drawRoundRect(Color(0xFF090C10),Offset(cx-w*.23f,base+h*.01f),androidx.compose.ui.geometry.Size(w*.46f,h*.16f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(8f,8f))
+        drawRoundRect(Color(0xFF353D46),Offset(cx-w*.15f,base+h*.025f),androidx.compose.ui.geometry.Size(w*.30f,h*.09f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(4f,4f))
+        for(i in 0..5){
+            val gx=cx-w*.13f+i*w*.052f
+            drawLine(Color(0xFF0A0D11),Offset(gx,base+h*.035f),Offset(gx,base+h*.11f),1.5f)
+        }
+
+        // Фары с двумя внутренними световыми элементами.
+        val headY=base-h*.03f
+        drawRoundRect(Color(0xFFE8F4FF),Offset(left+w*.12f,headY),androidx.compose.ui.geometry.Size(w*.16f,h*.10f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(7f,7f))
+        drawRoundRect(Color(0xFFE8F4FF),Offset(right-w*.28f,headY),androidx.compose.ui.geometry.Size(w*.16f,h*.10f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(7f,7f))
+        drawLine(Color.White.copy(alpha=.95f),Offset(left+w*.14f,headY+h*.03f),Offset(left+w*.25f,headY+h*.03f),2f)
+        drawLine(Color.White.copy(alpha=.95f),Offset(right-w*.26f,headY+h*.03f),Offset(right-w*.15f,headY+h*.03f),2f)
+
+        // Колёса, диски и центральные ступицы.
+        val wheelY=base+h*.12f
+        val wheelR=h*.30f
+        listOf(left+w*.22f,right-w*.22f).forEach{wx->
+            drawCircle(Color(0xFF020305),wheelR+4f,Offset(wx,wheelY))
+            drawCircle(Color(0xFF11151A),wheelR,Offset(wx,wheelY))
+            drawCircle(Color(0xFF68737D),wheelR*.55f,Offset(wx,wheelY))
+            drawCircle(Color(0xFF161B21),wheelR*.36f,Offset(wx,wheelY))
+            for(i in 0 until 6){
+                val a=Math.toRadians(i*60.0)
+                drawLine(Color(0xFF9AA3AA),Offset(wx+cos(a).toFloat()*wheelR*.10f,wheelY+sin(a).toFloat()*wheelR*.10f),
+                    Offset(wx+cos(a).toFloat()*wheelR*.46f,wheelY+sin(a).toFloat()*wheelR*.46f),1.4f)
+            }
+            drawCircle(accent.copy(alpha=.8f),wheelR*.10f,Offset(wx,wheelY))
+        }
+
+        // Нижняя линия кузова и красный акцент.
+        drawLine(accent.copy(alpha=.9f),Offset(left+w*.08f,base+h*.14f),Offset(right-w*.08f,base+h*.14f),2.2f)
+        drawLine(Color.Black.copy(alpha=.7f),Offset(left+w*.12f,base+h*.20f),Offset(right-w*.12f,base+h*.20f),3f)
+
+        val namePaint=android.graphics.Paint().apply{
+            isAntiAlias=true;color=Color.White.toArgb();textAlign=android.graphics.Paint.Align.CENTER
+            textSize=11f;typeface=android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD)
+        }
+        drawContext.canvas.nativeCanvas.drawText(car.name.uppercase(),cx,size.height*.91f,namePaint)
     }
 }
 
