@@ -44,6 +44,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -706,7 +707,7 @@ private fun MapScreen(season:Season){
                                         selected=place
                                         results=emptyList()
                                         mapRef?.animateCamera(
-                                            CameraUpdateFactory.newLatLngZoom(LatLng(place.lat,place.lon),11.5)
+                                            CameraPosition.Builder().target(LatLng(place.lat,place.lon)).zoom(11.5).build()
                                         )
                                         status="Выбран: "+place.name.substringBefore(",")
                                     }
