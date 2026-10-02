@@ -174,8 +174,8 @@ class _NavigationPageState extends State<NavigationPage> {
           onSubmitted: (v) {
             final text = v.trim();
             if (text.isNotEmpty) {
-              setState(() => message = 'Маршрут к «\function () { [native code] }» готовится');
-              speak('Маршрут к \function () { [native code] }');
+              setState(() => message = 'Маршрут к «$text» готовится');
+              speak('Маршрут к $text');
             }
           },
           decoration: const InputDecoration(
@@ -255,8 +255,16 @@ class SettingsPage extends StatelessWidget {
     SwitchListTile(value: sound, onChanged: (_) => onSound(), title: const Text('Голос Гены'), subtitle: const Text('Голосовые подсказки')),
     const Divider(),
     const Text('СЕЗОН', style: TextStyle(color: cyan, fontWeight: FontWeight.bold)),
-    for (final s in Season.values)
-      RadioListTile<Season>(value: s, groupValue: season, onChanged: (v) { if (v != null) onSeason(v); }, title: Text(s.title)),
+    RadioGroup<Season>(
+      groupValue: season,
+      onChanged: (v) { if (v != null) onSeason(v); },
+      child: Column(
+        children: [
+          for (final s in Season.values)
+            RadioListTile<Season>(value: s, title: Text(s.title)),
+        ],
+      ),
+    ),
   ]);
 }
 
