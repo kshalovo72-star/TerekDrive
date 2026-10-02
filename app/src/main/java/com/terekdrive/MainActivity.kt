@@ -838,7 +838,7 @@ private fun SpeedometerGauge(gauge:Gauge,speed:Float,modifier:Modifier,animation
         val tail=Offset(cx-cos(needleA).toFloat()*r*.11f,cy-sin(needleA).toFloat()*r*.11f)
         drawLine(Color.Black.copy(alpha=.75f),tail,tip,8f,StrokeCap.Round)
         drawLine(RED.copy(alpha=.92f),tail,tip,4.2f,StrokeCap.Round)
-        drawLine(Color.White.copy(alpha=.82f),cx,cy,tip,1.1f,StrokeCap.Round)
+        drawLine(Color.White.copy(alpha=.82f),Offset(cx,cy),tip,1.1f,StrokeCap.Round)
         drawCircle(Color(0xFF080B0E),16f,Offset(cx,cy))
         drawCircle(Color(0xFF69747D),11f,Offset(cx,cy))
         drawCircle(RED,7f,Offset(cx,cy))
