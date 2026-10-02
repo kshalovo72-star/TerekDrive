@@ -100,7 +100,7 @@ private const val PREF_LAST_UPDATE = "last_notified_update"
 private const val PREF_SEARCH_HISTORY = "search_history"
 private const val GROZNY_LAT = 43.3178
 private const val GROZNY_LON = 45.6985
-private const val APP_VERSION_CODE = 10
+private const val APP_VERSION_CODE = 11
 
 private val BG = Color(0xFF07090C)
 private val PANEL = Color(0xFF10151B)
