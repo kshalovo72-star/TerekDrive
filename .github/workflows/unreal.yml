@@ -1,0 +1,23 @@
+name: Terek Drive Unreal Android
+
+on:
+  push:
+    branches: ["unreal-max-graphics"]
+    paths:
+      - "unreal/**"
+      - ".github/workflows/unreal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Unreal Engine
+        run: |
+          echo "Unreal Engine 5.8 is required to package this project."
+          echo "A hosted GitHub runner does not include the proprietary UE editor."
+          exit 1
