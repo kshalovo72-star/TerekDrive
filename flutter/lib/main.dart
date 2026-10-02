@@ -454,11 +454,11 @@ class SeasonPainter extends CustomPainter {
       } else if (season == Season.autumn) {
         p.color = [Colors.deepOrange, Colors.orange, Colors.amber, Colors.brown][i % 4].withValues(alpha: .72);
         final leaf = Path()
-          ..moveTo(x, y - s.size)
-          ..quadraticBezierTo(x + s.size * 1.7, y - s.size * .25, x, y + s.size)
-          ..quadraticBezierTo(x - s.size * 1.7, y - s.size * .25, x, y - s.size);
+          ..moveTo(0, -s.size)
+          ..quadraticBezierTo(s.size * 1.7, -s.size * .25, 0, s.size)
+          ..quadraticBezierTo(-s.size * 1.7, -s.size * .25, 0, -s.size);
         canvas.save();
-        canvas.translate(0, 0);
+        canvas.translate(x, y);
         canvas.rotate(s.rotation + drift * .5);
         canvas.drawPath(leaf, p);
         canvas.restore();
