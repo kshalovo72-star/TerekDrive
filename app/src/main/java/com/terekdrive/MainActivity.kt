@@ -1214,7 +1214,8 @@ private fun SettingsScreen(sound:Boolean,animations:Boolean,assistant:Int,langua
                 Text("Выбери оформление приложения",color=MUTED,fontSize=10.sp)
                 Spacer(Modifier.height(6.dp))
                 LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                    items(Season.values().toList()){item->
+                    items(Season.values().size){index->
+                        val item=Season.values()[index]
                         FilterChip(
                             selected=item==season,
                             onClick={onSeason(item)},
