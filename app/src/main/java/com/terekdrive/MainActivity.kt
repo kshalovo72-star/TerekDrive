@@ -1071,7 +1071,34 @@ private fun GarageScreen(season:Season){
 
 @Composable
 private fun CarVisual(car:Car,modifier:Modifier,accent:Color){
-    Canvas(modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF07090D))){
+    Canvas(modifier.clip(RoundedCornerShape(18.dp))){
+        // Photorealistic tuning-garage environment inspired by the reference photo.
+        drawRect(Brush.verticalGradient(listOf(Color(0xFF171C22),Color(0xFF090B0F),Color(0xFF050608))))
+        val floorTop=size.height*.64f
+        drawRect(Color(0xFF171A1F),topLeft=Offset(0f,floorTop),size=androidx.compose.ui.geometry.Size(size.width,size.height-floorTop))
+        for(i in 0..7){
+            val x=i*size.width/7f
+            drawLine(Color.White.copy(alpha=.035f),Offset(x,floorTop),Offset(size.width*.5f+(x-size.width*.5f)*1.45f,size.height),3f)
+        }
+        // Ceiling strip lights and warm workshop accents.
+        drawRoundRect(Color.White.copy(alpha=.85f),Offset(size.width*.08f,size.height*.08f),androidx.compose.ui.geometry.Size(size.width*.22f,5f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(3f,3f))
+        drawRoundRect(Color.White.copy(alpha=.72f),Offset(size.width*.39f,size.height*.05f),androidx.compose.ui.geometry.Size(size.width*.23f,5f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(3f,3f))
+        drawRoundRect(Color.White.copy(alpha=.70f),Offset(size.width*.70f,size.height*.10f),androidx.compose.ui.geometry.Size(size.width*.20f,5f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(3f,3f))
+        drawLine(Color(0xFFFFA45B).copy(alpha=.45f),Offset(size.width*.05f,size.height*.42f),Offset(size.width*.05f,size.height*.78f),6f)
+        drawLine(Color(0xFFFFA45B).copy(alpha=.35f),Offset(size.width*.95f,size.height*.40f),Offset(size.width*.95f,size.height*.78f),6f)
+        // Garage wall panels / service bay.
+        drawRect(Color.Black.copy(alpha=.18f),topLeft=Offset(size.width*.07f,size.height*.18f),size=androidx.compose.ui.geometry.Size(size.width*.86f,size.height*.42f))
+        for(i in 0..9){
+            val y=size.height*(.20f+i*.038f)
+            drawLine(Color.White.copy(alpha=.018f),Offset(size.width*.08f,y),Offset(size.width*.92f,y),1f)
+        }
+        // Large logo silhouette behind the car.
+        val logoY=size.height*.31f
+        drawLine(Color.White.copy(alpha=.10f),Offset(size.width*.40f,logoY),Offset(size.width*.50f,logoY-size.height*.07f),4f)
+        drawLine(Color.White.copy(alpha=.10f),Offset(size.width*.50f,logoY-size.height*.07f),Offset(size.width*.60f,logoY),4f)
+        drawLine(Color.White.copy(alpha=.10f),Offset(size.width*.43f,logoY-size.height*.025f),Offset(size.width*.57f,logoY-size.height*.025f),3f)
+        drawRect(Color.White.copy(alpha=.035f),topLeft=Offset(size.width*.34f,size.height*.36f),size=androidx.compose.ui.geometry.Size(size.width*.32f,3f))
+
         val cx=size.width*.50f
         val groundY=size.height*.77f
         val suv=car.type=="SUV"
