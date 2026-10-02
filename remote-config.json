@@ -1,6 +1,6 @@
 {
-  "version": 10,
-  "message": "Терек Драйв 1.9: фотореалистичный гараж и объёмные машины.",
+  "version": 11,
+  "message": "Терек Драйв 2.0: фотореалистичный гараж с настоящими фото машин.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
