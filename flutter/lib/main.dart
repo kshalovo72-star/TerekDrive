@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -233,36 +234,351 @@ class _NavigationPageState extends State<NavigationPage> {
   ]);
 }
 
-class SpeedPage extends StatelessWidget {
+class SpeedPage extends StatefulWidget {
   final Position? position;
   final VoidCallback onStart;
   final GaugeStyle gaugeStyle;
   const SpeedPage({super.key, this.position, required this.onStart, required this.gaugeStyle});
 
   @override
+  State<SpeedPage> createState() => _SpeedPageState();
+}
+
+class _SpeedPageState extends State<SpeedPage> with SingleTickerProviderStateMixin {
+  late final AnimationController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat();
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final speed = position == null ? 0.0 : math.max(0.0, position!.speed * 3.6);
-    return Column(children: [
-      const Padding(padding: EdgeInsets.all(16), child: Header('СКОРОСТЬ', 'GPS / 0—300 KM/H')),
-      Expanded(
-        child: Center(
-          child: CustomPaint(
-            size: const Size(300, 300),
-            painter: GaugePainter(speed, gaugeStyle),
-            child: SizedBox(width: 300, height: 300, child: Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(speed.toStringAsFixed(0), style: const TextStyle(fontSize: 72, fontWeight: FontWeight.w900)),
-                const Text('KM/H', style: TextStyle(color: cyan)),
-              ]),
-            )),
+    final speed = widget.position == null ? 0.0 : math.max(0.0, widget.position!.speed * 3.6);
+    final gpsReady = widget.position != null;
+    return Stack(
+      children: [
+        Positioned.fill(child: CustomPaint(painter: CockpitBackgroundPainter(controller.value))),
+        SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                child: Row(
+                  children: [
+                    const Header('СКОРОСТЬ', 'TEREK DRIVE / DIGITAL COCKPIT'),
+                    const Spacer(),
+                    _HudChip(icon: Icons.gps_fixed, text: gpsReady ? 'GPS LIVE' : 'GPS OFF', active: gpsReady),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final d = math.min(constraints.maxWidth - 22, constraints.maxHeight - 22).clamp(280.0, 430.0);
+                    return Center(
+                      child: AnimatedBuilder(
+                        animation: controller,
+                        builder: (_, __) => SizedBox(
+                          width: d,
+                          height: d,
+                          child: CustomPaint(
+                            painter: AdvancedGaugePainter(
+                              speed: speed,
+                              style: widget.gaugeStyle,
+                              pulse: controller.value,
+                              gpsReady: gpsReady,
+                            ),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    speed.toStringAsFixed(0),
+                                    style: TextStyle(
+                                      fontSize: d * .205,
+                                      height: .88,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: -3,
+                                      shadows: [
+                                        Shadow(color: widget.gaugeStyle.accent.withValues(alpha: .55), blurRadius: 22),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    'KM/H',
+                                    style: TextStyle(
+                                      color: widget.gaugeStyle.accent,
+                                      fontSize: d * .045,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 4,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    widget.gaugeStyle.title,
+                                    style: const TextStyle(color: Colors.white38, fontSize: 9, letterSpacing: 2.2, fontWeight: FontWeight.w800),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: Row(
+                  children: [
+                    Expanded(child: _MetricCard(label: 'GPS', value: gpsReady ? 'LOCK' : 'WAIT', icon: Icons.satellite_alt)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _MetricCard(label: 'MAX', value: '300', icon: Icons.speed)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _MetricCard(label: 'MODE', value: widget.gaugeStyle.shortName, icon: Icons.tune)),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: FilledButton.icon(
+                    onPressed: widget.onStart,
+                    icon: const Icon(Icons.gps_fixed),
+                    label: Text(gpsReady ? 'GPS ПОДКЛЮЧЕН' : 'ВКЛЮЧИТЬ GPS'),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-      ),
-      Padding(padding: const EdgeInsets.all(20), child: FilledButton.icon(
-        onPressed: onStart, icon: const Icon(Icons.gps_fixed), label: const Text('ВКЛЮЧИТЬ GPS'),
-      )),
-    ]);
+      ],
+    );
   }
+}
+
+class _HudChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final bool active;
+  const _HudChip({required this.icon, required this.text, required this.active});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: active ? red.withValues(alpha: .10) : Colors.white.withValues(alpha: .04),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: active ? red.withValues(alpha: .35) : Colors.white10),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: active ? red : Colors.white38),
+        const SizedBox(width: 6),
+        Text(text, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2, color: active ? Colors.white : Colors.white38)),
+      ],
+    ),
+  );
+}
+
+class _MetricCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  const _MetricCard({required this.label, required this.value, required this.icon});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: .035),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Colors.white.withValues(alpha: .07)),
+      boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 8))],
+    ),
+    child: Row(
+      children: [
+        Icon(icon, size: 17, color: cyan),
+        const SizedBox(width: 7),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 1)),
+          const SizedBox(height: 2),
+          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+        ]),
+      ],
+    ),
+  );
+}
+
+class CockpitBackgroundPainter extends CustomPainter {
+  final double t;
+  CockpitBackgroundPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height * .45);
+    final glow = Paint()
+      ..shader = RadialGradient(
+        colors: [red.withValues(alpha: .09), Colors.transparent],
+      ).createShader(Rect.fromCircle(center: center, radius: size.width * .55));
+    canvas.drawCircle(center, size.width * .55, glow);
+
+    final grid = Paint()..color = Colors.white.withValues(alpha: .018)..strokeWidth = 1;
+    for (var x = 0.0; x < size.width; x += 28) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+    }
+    for (var y = 0.0; y < size.height; y += 28) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+
+    final scan = Paint()..color = red.withValues(alpha: .035);
+    final sy = (t * size.height * 1.4) % (size.height + 80) - 40;
+    canvas.drawRect(Rect.fromLTWH(0, sy, size.width, 2), scan);
+  }
+
+  @override
+  bool shouldRepaint(covariant CockpitBackgroundPainter old) => old.t != t;
+}
+
+class AdvancedGaugePainter extends CustomPainter {
+  final double speed;
+  final GaugeStyle style;
+  final double pulse;
+  final bool gpsReady;
+  AdvancedGaugePainter({required this.speed, required this.style, required this.pulse, required this.gpsReady});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = math.min(size.width, size.height) / 2;
+    final accent = style.accent;
+    final value = (speed / 300).clamp(0.0, 1.0);
+    final start = math.pi * .73;
+    final sweep = math.pi * 1.54;
+
+    void arc(double radius, double width, Color color, double from, double amount, {bool glow = false}) {
+      final p = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round
+        ..color = color;
+      if (glow) p.maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 9);
+      canvas.drawArc(Rect.fromCircle(center: c, radius: radius), from, amount, false, p);
+    }
+
+    final disc = Paint()
+      ..shader = RadialGradient(
+        colors: [const Color(0xFF151A22), const Color(0xFF080A0E), const Color(0xFF030406)],
+        stops: const [.0, .62, 1],
+      ).createShader(Rect.fromCircle(center: c, radius: r));
+    canvas.drawCircle(c, r * .94, disc);
+
+    arc(r * .91, 2, Colors.white.withValues(alpha: .12), 0, math.pi * 2);
+    arc(r * .84, 2, accent.withValues(alpha: .12), start, sweep, glow: true);
+    arc(r * .84, 8, accent.withValues(alpha: .08), start, sweep);
+    arc(r * .84, 8, accent, start, sweep * value, glow: value > .01);
+
+    for (var i = 0; i < 60; i++) {
+      final a = start + sweep * i / 59;
+      final rr1 = r * .77;
+      final rr2 = r * (i % 5 == 0 ? .70 : .735);
+      final p = Paint()
+        ..color = i / 59 <= value ? accent.withValues(alpha: .72) : Colors.white.withValues(alpha: .12)
+        ..strokeWidth = i % 5 == 0 ? 3 : 1.5;
+      canvas.drawLine(
+        Offset(c.dx + math.cos(a) * rr1, c.dy + math.sin(a) * rr1),
+        Offset(c.dx + math.cos(a) * rr2, c.dy + math.sin(a) * rr2),
+        p,
+      );
+    }
+
+    for (var i = 0; i <= 30; i++) {
+      final a = start + sweep * i / 30;
+      final major = i % 5 == 0;
+      final rr1 = r * (major ? .67 : .705);
+      final rr2 = r * .735;
+      final p = Paint()
+        ..color = major ? Colors.white.withValues(alpha: .72) : Colors.white.withValues(alpha: .22)
+        ..strokeWidth = major ? 3 : 1.4;
+      canvas.drawLine(
+        Offset(c.dx + math.cos(a) * rr1, c.dy + math.sin(a) * rr1),
+        Offset(c.dx + math.cos(a) * rr2, c.dy + math.sin(a) * rr2),
+        p,
+      );
+      if (major) {
+        final tp = TextPainter(
+          text: TextSpan(text: (i * 10).toString(), style: TextStyle(color: Colors.white.withValues(alpha: .72), fontSize: r * .055, fontWeight: FontWeight.w800)),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final lr = r * .59;
+        tp.paint(canvas, Offset(c.dx + math.cos(a) * lr - tp.width / 2, c.dy + math.sin(a) * lr - tp.height / 2));
+      }
+    }
+
+    final redline = Paint()..color = red.withValues(alpha: .16);
+    canvas.drawArc(Rect.fromCircle(center: c, radius: r * .76), start + sweep * .82, sweep * .18, false, redline);
+
+    final needleAngle = start + sweep * value;
+    final tip = Offset(c.dx + math.cos(needleAngle) * r * .68, c.dy + math.sin(needleAngle) * r * .68);
+    final glowNeedle = Paint()
+      ..color = accent.withValues(alpha: .45)
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 10);
+    canvas.drawLine(c, tip, glowNeedle);
+    final needle = Paint()..color = Colors.white..strokeWidth = 3..strokeCap = StrokeCap.round;
+    canvas.drawLine(c, tip, needle);
+    final needleAccent = Paint()..color = accent..strokeWidth = 5..strokeCap = StrokeCap.round;
+    canvas.drawLine(c, Offset(c.dx + math.cos(needleAngle) * r * .18, c.dy + math.sin(needleAngle) * r * .18), tip, needleAccent);
+
+    final hubGlow = Paint()..color = accent.withValues(alpha: .35)..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 12);
+    canvas.drawCircle(c, r * .075, hubGlow);
+    canvas.drawCircle(c, r * .075, Paint()..color = const Color(0xFF0A0D12));
+    canvas.drawCircle(c, r * .048, Paint()..color = accent);
+    canvas.drawCircle(c, r * .022, Paint()..color = Colors.white);
+
+    final panelRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset(c.dx, c.dy + r * .49), width: r * 1.05, height: r * .12),
+      Radius.circular(r * .05),
+    );
+    canvas.drawRRect(panelRect, Paint()..color = Colors.white.withValues(alpha: .035));
+    final tele = TextPainter(
+      text: TextSpan(
+        children: [
+          TextSpan(text: gpsReady ? 'GPS LOCKED' : 'GPS SEARCH', style: TextStyle(color: gpsReady ? accent : Colors.white38, fontSize: r * .032, fontWeight: FontWeight.w900, letterSpacing: 1.4)),
+          TextSpan(text: '   •   0—300', style: TextStyle(color: Colors.white38, fontSize: r * .032, fontWeight: FontWeight.w700)),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tele.paint(canvas, Offset(c.dx - tele.width / 2, c.dy + r * .49 - tele.height / 2));
+
+    for (var i = 0; i < 5; i++) {
+      final active = i < (value * 5).ceil();
+      canvas.drawCircle(
+        Offset(c.dx - r * .20 + i * r * .10, c.dy - r * .64),
+        r * .012,
+        Paint()..color = active ? accent : Colors.white12,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant AdvancedGaugePainter old) =>
+      old.speed != speed || old.style != style || old.pulse != pulse || old.gpsReady != gpsReady;
 }
 
 class SettingsPage extends StatelessWidget {
@@ -352,9 +668,14 @@ class GaugePainter extends CustomPainter {
 }
 
 enum GaugeStyle {
-  neon('NEON RED'), blue('BLUE SPORT'), classic('CLASSIC');
+  neon('NEON RED', 'NEON', red),
+  blue('BLUE SPORT', 'BLUE', cyan),
+  classic('CLASSIC', 'CLASSIC', Colors.white);
+
   final String title;
-  const GaugeStyle(this.title);
+  final String shortName;
+  final Color accent;
+  const GaugeStyle(this.title, this.shortName, this.accent);
 }
 
 enum Season {
@@ -377,7 +698,7 @@ class _SeasonalEffectsState extends State<SeasonalEffects> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    particles = List.generate(70, (i) => SeasonParticle(
+    particles = List.generate(110, (i) => SeasonParticle(
       x: random.nextDouble(),
       y: random.nextDouble(),
       size: 1.5 + random.nextDouble() * 4,
