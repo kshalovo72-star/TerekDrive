@@ -1,14 +1,13 @@
 {
-  "version": 14,
-  "message": "Терек Драйв 2.1: отдельные вкладки карты, навигации, скорости, гаража и настроек.",
+  "version": 15,
+  "message": "Терек Драйв 2.4: выбор любого города для offline-карты, гараж удалён.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
-  "offline_region": "Grozny",
+  "offline_region": "user_selected_city",
   "seasonal_theme": true,
   "update_notifications": true,
   "gps_speedometer": true,
-  "live_car_garage": true,
   "gena_chat": true,
   "gena_voice_input": true,
   "weather_live": true,
@@ -19,7 +18,8 @@
   "quick_navigation": true,
   "speedometer_live": true,
   "speed_redline_effects": true,
-  "garage_cars": 3,
   "navigation_tab": true,
-  "speed_tab": true
+  "speed_tab": true,
+  "offline_city_search": true,
+  "offline_city_download": true
 }
