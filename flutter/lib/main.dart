@@ -22,6 +22,17 @@ class MyApp extends StatelessWidget {
     theme: ThemeData.dark(useMaterial3: true).copyWith(
       scaffoldBackgroundColor: bg,
       colorScheme: const ColorScheme.dark(primary: red, secondary: cyan),
+      cardTheme: CardThemeData(color: panel, elevation: 0, margin: EdgeInsets.zero),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: const Color(0xFF080B0F),
+        indicatorColor: red.withValues(alpha: .18),
+        labelTextStyle: WidgetStateProperty.all(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true, fillColor: const Color(0xFF121923),
+        hintStyle: const TextStyle(color: Colors.white38),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+      ),
     ),
     home: const DriveShell(),
   );
@@ -274,11 +285,15 @@ class Header extends StatelessWidget {
   const Header(this.title, this.subtitle, {super.key});
   @override
   Widget build(BuildContext context) => Row(children: [
-    const Icon(Icons.bolt, color: red, size: 30),
-    const SizedBox(width: 8),
+    Container(
+      width: 42, height: 42,
+      decoration: BoxDecoration(color: red.withValues(alpha: .12), borderRadius: BorderRadius.circular(13), border: Border.all(color: red.withValues(alpha: .35))),
+      child: const Icon(Icons.bolt, color: red, size: 26),
+    ),
+    const SizedBox(width: 10),
     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
-      Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, letterSpacing: .4)),
+      Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 9, letterSpacing: 1.2)),
     ]),
   ]);
 }
@@ -290,11 +305,18 @@ class GaugePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = math.min(size.width, size.height) / 2 - 20;
-    final base = Paint()..style = PaintingStyle.stroke..strokeWidth = 14..color = Colors.white12;
-    final active = Paint()..style = PaintingStyle.stroke..strokeWidth = 14..color = cyan..strokeCap = StrokeCap.round;
+    final base = Paint()..style = PaintingStyle.stroke..strokeWidth = 16..color = Colors.white10;
+    final active = Paint()..style = PaintingStyle.stroke..strokeWidth = 16..color = red..strokeCap = StrokeCap.round;
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi * .75, math.pi * 1.5, false, base);
     final value = (speed / 300).clamp(0.0, 1.0);
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi * .75, math.pi * 1.5 * value, false, active);
+    final tick = Paint()..color = Colors.white24..strokeWidth = 2;
+    for (var i = 0; i <= 30; i++) {
+      final a = math.pi * .75 + math.pi * 1.5 * i / 30;
+      final r1 = radius - (i % 5 == 0 ? 19 : 11);
+      final r2 = radius - 5;
+      canvas.drawLine(Offset(center.dx + math.cos(a) * r1, center.dy + math.sin(a) * r1), Offset(center.dx + math.cos(a) * r2, center.dy + math.sin(a) * r2), tick);
+    }
   }
   @override bool shouldRepaint(covariant GaugePainter oldDelegate) => oldDelegate.speed != speed;
 }
@@ -311,9 +333,9 @@ class SeasonalEffects extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (season == Season.summer) return const SizedBox.shrink();
-    return Container(decoration: BoxDecoration(gradient: LinearGradient(
+    return IgnorePointer(child: Container(decoration: BoxDecoration(gradient: LinearGradient(
       begin: Alignment.topCenter, end: Alignment.bottomCenter,
-      colors: [season == Season.winter ? Colors.white.withValues(alpha: .04) : Colors.orange.withValues(alpha: .03), Colors.transparent],
-    )));
+      colors: [season == Season.winter ? Colors.white.withValues(alpha: .05) : Colors.orange.withValues(alpha: .035), Colors.transparent],
+    ))));
   }
 }
