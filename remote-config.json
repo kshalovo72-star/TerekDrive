@@ -1,5 +1,5 @@
 {
-  "version": 12,
+  "version": 14,
   "message": "Терек Драйв 2.1: отдельные вкладки карты, навигации, скорости, гаража и настроек.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
