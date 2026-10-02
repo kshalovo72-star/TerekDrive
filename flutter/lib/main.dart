@@ -333,7 +333,7 @@ class GaugePainter extends CustomPainter {
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi * .75, math.pi * 1.5, false, base);
     final value = (speed / 300).clamp(0.0, 1.0);
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi * .75, math.pi * 1.5 * value, false, active);
-    final tick = Paint()..color = style == GaugeStyle.classic ? Colors.white54 : Colors.white24..strokeWidth = 2;
+    final tick = Paint()..color = (style == GaugeStyle.classic ? Colors.white54 : Colors.white24)..strokeWidth = 2;
     for (var i = 0; i <= 30; i++) {
       final a = math.pi * .75 + math.pi * 1.5 * i / 30;
       final r1 = radius - (i % 5 == 0 ? 19 : 11);
