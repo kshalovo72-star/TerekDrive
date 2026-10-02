@@ -1,6 +1,6 @@
 {
-  "version": 9,
-  "message": "Терек Драйв 1.8: реалистичный спидометр и обновлённый гараж.",
+  "version": 10,
+  "message": "Терек Драйв 1.9: фотореалистичный гараж и объёмные машины.",
   "music_mode": "local_picker",
   "weather": "open-meteo",
   "map_style": "openfreemap-liberty",
